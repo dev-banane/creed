@@ -2,47 +2,47 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import DOMPurify from "isomorphic-dompurify";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Gift, LoaderCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { AnimatedCheckmark } from "@/components/ui/animated-checkmark";
 import { ArrowRightIcon } from "@/components/ui/arrow-right";
+import { CopyIcon } from "@/components/ui/copy";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { CreedWordmark } from "@/components/creed/brand";
-import { SearchableSelect } from "@/components/creed/searchable-select";
-import { loadSettingsAiModels, loadSettingsAiSettings } from "@/components/creed/settings-preload";
-import {
-  AI_MODEL_CATALOG,
-  AI_MODEL_QUALITY_META,
-  DEFAULT_AI_MODEL_ID,
-  formatModelCost,
-  type AiModelCatalogItem,
-} from "@/lib/ai/model-catalog";
+import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
+import { ConnectionCard, resolveConnectionStatus } from "@/components/creed/connection-card";
 import { useCreed } from "@/components/creed/creed-provider";
+import { RichTextEditor } from "@/components/creed/rich-text-editor";
 import {
   accentColorMap,
   type CreedSection,
   type OnboardingState,
 } from "@/lib/creed-data";
+import { getCreedPromptText } from "@/lib/creed-prompts";
 import { splitPreservingLigatures } from "@/lib/landing-text";
 import {
   CREED_TYPE_OPTIONS,
-  applyOnboardingRefinement,
   buildOnboardingPreviewSections,
   compileOnboardingDraft,
   getCreedTypeDefinition,
-  type OnboardingPreviewDraft,
-  type OnboardingRefinement,
 } from "@/lib/onboarding/compile";
 import { cn } from "@/lib/utils";
 
-// 8-step flow indexed 0–7: vibe / identity / direction / tools /
-// preferences / daily context / api key / preview. Each step picks an
-// accent for the top progress bar so the colour subtly tracks where
-// the user is in the flow.
-const TOTAL_STEPS = 8;
+// 9-step flow indexed 0-8: vibe / identity / direction / tools / preferences /
+// daily context / connect / compose / preview. The questionnaire feeds a
+// deterministic seed draft; the connected agent composes the real initial
+// Creed, which the user reviews on the preview step before entering the app.
+// Each step picks an accent for the top progress bar so the colour subtly
+// tracks where the user is in the flow.
+const TOTAL_STEPS = 9;
+const CONNECT_STEP = 6;
+const COMPOSE_STEP = 7;
+const PREVIEW_STEP = 8;
+// Advancing past the last questionnaire step silently claims the seed draft so
+// the agent has onboarding context to read over MCP before it composes.
+const FINAL_QUESTION_STEP = CONNECT_STEP - 1;
 
 const stepAccentMap = [
   accentColorMap.identity, // 0 vibe
@@ -51,8 +51,9 @@ const stepAccentMap = [
   accentColorMap.tools, // 3 tools
   accentColorMap.preferences, // 4 preferences + constraints
   accentColorMap.workflows, // 5 daily context
-  "#2563EB", // 6 api key
-  accentColorMap.identity, // 7 preview
+  "#2563EB", // 6 connect
+  accentColorMap.identity, // 7 compose
+  accentColorMap.identity, // 8 preview
 ];
 
 // Vibe accent colours: blue / green / orange / purple - matched to the
@@ -69,6 +70,12 @@ const defaultStepSubtitle = "It only changes the question wording and examples."
 
 function bullets(items: string[]) {
   return `<ul class="creed-list creed-list-bullet">${items.map((text) => `<li>${text}</li>`).join("")}</ul>`;
+}
+
+// MCP clients report names like "Claude Code (creed)" - the trailing
+// "(<server alias>)" is just the local connector name and is noise in the UI.
+function agentDisplayName(name: string) {
+  return name.replace(/\s*\([^)]*\)\s*$/, "").trim() || name;
 }
 
 function makeStarterSection(
@@ -145,98 +152,131 @@ const blankTemplateSections: CreedSection[] = [
   }),
 ];
 
-const PREVIEW_ALLOWED_TAGS = [
-  "blockquote",
-  "br",
-  "code",
-  "em",
-  "h2",
-  "h3",
-  "i",
-  "li",
-  "ol",
-  "p",
-  "pre",
-  "span",
-  "strong",
-  "ul",
-];
-
-function sanitizePreviewHtml(value: string) {
-  return DOMPurify.sanitize(value, {
-    ALLOWED_TAGS: PREVIEW_ALLOWED_TAGS,
-    ALLOWED_ATTR: ["class", "data-tag"],
-    KEEP_CONTENT: true,
-    USE_PROFILES: { html: true },
-  });
-}
-
 export function OnboardingScreen() {
   const router = useRouter();
-  const { state, updateOnboarding, resetOnboarding, claimOnboardingPreview } = useCreed();
+  const { state, updateOnboarding, claimOnboardingPreview } =
+    useCreed();
   const [step, setStep] = useState(0);
   const [groupOther, setGroupOther] = useState<string | null>(null);
   const [groupOtherValue, setGroupOtherValue] = useState("");
-  const [refinedDraft, setRefinedDraft] = useState<OnboardingPreviewDraft | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
-  const [selectedModelId, setSelectedModelId] = useState(DEFAULT_AI_MODEL_ID);
-  const [aiModels, setAiModels] = useState<AiModelCatalogItem[]>(AI_MODEL_CATALOG);
-  const [savedKeyLastFour, setSavedKeyLastFour] = useState<string | null>(null);
-  const [apiKeyReady, setApiKeyReady] = useState(false);
-  const [apiKeySaving, setApiKeySaving] = useState(false);
-  const [apiKeyInvalid, setApiKeyInvalid] = useState(false);
-  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
   const creedTypeDefinition = getCreedTypeDefinition(state.onboarding.creedType);
   const typeTheme = typeThemes[state.onboarding.creedType];
   const currentAccent =
     step === 0 || step === 1 || step === TOTAL_STEPS - 1 ? typeTheme.accent : stepAccentMap[step];
   const currentToolGroups = creedTypeDefinition.toolsGroups;
-  const deterministicDraft = useMemo(
-    () => compileOnboardingDraft(state.onboarding),
+  const previewSections = useMemo(
+    () => buildOnboardingPreviewSections(compileOnboardingDraft(state.onboarding)),
     [state.onboarding]
   );
-  const previewDraft = refinedDraft ?? deterministicDraft;
-  const previewSections = useMemo(
-    () => buildOnboardingPreviewSections(previewDraft),
-    [previewDraft]
-  );
 
+  // Connect gate.
+  const connected = state.mcpStatus === "connected";
+  // Compose "write landed" signal. The Compose step polls the server directly
+  // (effect below) and flips these the moment an agent-authored section appears,
+  // independent of the provider's background-sync merge guard - which during
+  // onboarding can refuse to adopt the agent's compose and leave the screen
+  // stuck on "waiting" until a manual refresh.
+  const [submittedViaServer, setSubmittedViaServer] = useState(false);
+  const [serverComposedSections, setServerComposedSections] = useState<CreedSection[] | null>(null);
+  const composedSections = serverComposedSections ?? state.sections;
+  const composed =
+    submittedViaServer || composedSections.some((section) => section.lastEditedType === "agent");
+  // Which agent composed (compose_creed is one-time, so at most one). Used to
+  // attribute the finished Creed on the Compose step.
+  const composerName =
+    composedSections.find((section) => section.lastEditedType === "agent")?.lastEditedBy ?? null;
+
+  // Has a given connected agent actually sent a Creed? compose is one-time, so
+  // with a single agent the composer is unambiguous; with several we match the
+  // composer by alias-stripped name.
+  const isAgentSubmitted = (clientName: string) =>
+    composed &&
+    (state.mcpClients.length === 1 ||
+      agentDisplayName(clientName).toLowerCase() ===
+        agentDisplayName(composerName ?? "").toLowerCase());
+  const submittedCount = state.mcpClients.filter((client) => isAgentSubmitted(client.name)).length;
+  const allSubmitted = state.mcpClients.length > 0 && submittedCount === state.mcpClients.length;
+
+  // Roster of connected agents with their submit status, shown on the Compose
+  // step so the user can see which agent(s) have actually sent a Creed - works
+  // whether they have one agent or several connected.
+  const connectedAgentsRoster =
+    state.mcpClients.length > 0 ? (
+      <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+        {state.mcpClients.map((client) => {
+          const submitted = isAgentSubmitted(client.name);
+          return (
+            <div
+              key={client.id}
+              className="flex items-center justify-between gap-3 rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 py-2.5"
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <IntegrationGlyph kind={client.icon} framed={false} className="h-6 w-6 shrink-0" />
+                <span className="truncate text-[14px] text-[var(--creed-text-primary)]">
+                  {agentDisplayName(client.name)}
+                </span>
+              </div>
+              {submitted ? (
+                <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--creed-text-secondary)]">
+                  <span className="h-2 w-2 rounded-[3px] bg-[#16A34A]" />
+                  Submitted
+                </span>
+              ) : (
+                <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--creed-text-tertiary)]">
+                  <span className="h-2 w-2 rounded-[3px] bg-[var(--creed-border-strong)]" />
+                  Not submitted
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    ) : null;
+
+  // Returning users (and abandoned mid-flow reloads) who already have a Creed
+  // skip onboarding. Both land here at step 0, so that's the only place we
+  // bounce. We deliberately don't bounce mid-flow: advancing into Connect
+  // claims the seed draft (sections become non-empty) while the user is still
+  // inside onboarding, so a broader check would eject them before the Connect
+  // or Compose steps could render.
   useEffect(() => {
-    if (state.sections.length > 0) {
+    if (state.sections.length > 0 && step === 0) {
       router.replace("/file");
     }
-  }, [router, state.sections.length]);
+  }, [router, state.sections.length, step]);
 
+  // On the Compose step, poll the server directly so the screen flips the moment
+  // the agent's compose lands. We read /api/app/state ourselves rather than going
+  // through the provider, whose background-sync merge guard can refuse to adopt
+  // the agent's sections mid-onboarding; this path can't be blocked. (The roster
+  // of connected agents stays fresh via the provider's own background sync.)
   useEffect(() => {
+    if (step !== COMPOSE_STEP || composed) {
+      return;
+    }
     let cancelled = false;
-
-    async function loadAiSettings() {
+    async function checkForCompose() {
       try {
-        const [settings, models] = await Promise.all([
-          loadSettingsAiSettings(),
-          loadSettingsAiModels(),
-        ]);
-
-        if (!cancelled) {
-          setSelectedModelId(settings?.selectedModelId ?? DEFAULT_AI_MODEL_ID);
-          setSavedKeyLastFour(settings?.keyLastFour ?? null);
-          setApiKeyReady(Boolean(settings?.keyLastFour));
-          if (models.length) {
-            setAiModels(models);
-          }
+        const res = await fetch("/api/app/state", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { state?: { sections?: CreedSection[] } };
+        const sections = data.state?.sections ?? [];
+        if (!cancelled && sections.some((section) => section.lastEditedType === "agent")) {
+          setServerComposedSections(sections);
+          setSubmittedViaServer(true);
         }
       } catch {
-        return;
+        // Ignore transient poll errors; the next tick retries.
       }
     }
-
-    void loadAiSettings();
-
+    const id = window.setInterval(checkForCompose, 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
-  }, []);
+  }, [step, composed]);
 
   function toggleCommunicationStyle(
     option: "Direct" | "Collaborative" | "Thorough" | "Concise"
@@ -290,109 +330,39 @@ export function OnboardingScreen() {
   }
 
   const handleContinue = useCallback(async () => {
-    // Step 6 (API key + Generate) is the synthesizer step.
-    if (step === 6) {
-      if (!apiKeyReady) {
-        setAiNotice("Save a valid OpenRouter API key to generate your Creed.");
-        return;
-      }
-
-      setIsGenerating(true);
-      setRefinedDraft(null);
-      setAiNotice(null);
-
+    if (step === FINAL_QUESTION_STEP) {
+      // Silently claim the deterministic seed draft so the agent has onboarding
+      // context to read over MCP, then move to Connect. The draft is never
+      // shown as a finished Creed - the connected agent composes the real
+      // initial Creed at the final step.
+      if (claiming) return;
+      setClaiming(true);
       try {
-        const response = await fetch("/api/onboarding/synthesize", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            onboarding: state.onboarding,
-            draft: deterministicDraft,
-          }),
-        });
-        const payload = (await response.json()) as {
-          refinement?: OnboardingRefinement | null;
-          error?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error || "Could not generate Creed.");
-        }
-
-        if (payload.refinement && Object.keys(payload.refinement).length > 0) {
-          setRefinedDraft(applyOnboardingRefinement(deterministicDraft, payload.refinement));
-        }
-        setStep(7);
-      } catch (error) {
-        setAiNotice(error instanceof Error ? error.message : "Could not generate Creed.");
+        await claimOnboardingPreview(previewSections);
+        setStep(CONNECT_STEP);
       } finally {
-        setIsGenerating(false);
+        setClaiming(false);
       }
       return;
     }
-
+    if (step === CONNECT_STEP) {
+      // Hard gate: only advance once an agent is connected.
+      if (!connected) return;
+      setStep(COMPOSE_STEP);
+      return;
+    }
+    if (step === COMPOSE_STEP) {
+      // Hard gate: only advance once an agent has composed the Creed.
+      if (!composed) return;
+      setStep(PREVIEW_STEP);
+      return;
+    }
     setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
-  }, [apiKeyReady, deterministicDraft, state.onboarding, step]);
-
-  async function handleSaveApiKey() {
-    const trimmedKey = apiKeyDraft.trim();
-    if (!trimmedKey && !savedKeyLastFour) {
-      setApiKeyInvalid(true);
-      return;
-    }
-
-    try {
-      setApiKeySaving(true);
-      setApiKeyInvalid(false);
-      setAiNotice(null);
-      const response = await fetch("/api/app/ai/settings", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          apiKey: trimmedKey || undefined,
-          modelId: selectedModelId,
-        }),
-      });
-      const payload = (await response.json()) as {
-        settings?: { keyLastFour?: string; selectedModelId?: string };
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not save API key.");
-      }
-
-      setSavedKeyLastFour(payload.settings?.keyLastFour ?? savedKeyLastFour);
-      setSelectedModelId(payload.settings?.selectedModelId ?? selectedModelId);
-      setApiKeyDraft("");
-      setApiKeyReady(true);
-      setApiKeyInvalid(false);
-    } catch {
-      setApiKeyReady(false);
-      setApiKeyInvalid(true);
-    } finally {
-      setApiKeySaving(false);
-    }
-  }
-
-  function handleRestart() {
-    resetOnboarding();
-    setRefinedDraft(null);
-    setGroupOther(null);
-    setGroupOtherValue("");
-    setIsGenerating(false);
-    setApiKeyReady(Boolean(savedKeyLastFour));
-    setAiNotice(null);
-    setStep(0);
-  }
+  }, [step, claiming, connected, composed, previewSections, claimOnboardingPreview]);
 
   useEffect(() => {
     function onWindowKeyDown(event: KeyboardEvent) {
-      if (step >= TOTAL_STEPS - 1 || isGenerating) {
+      if (step >= TOTAL_STEPS - 1 || claiming) {
         return;
       }
 
@@ -424,16 +394,25 @@ export function OnboardingScreen() {
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
-  }, [isGenerating, step, handleContinue]);
+  }, [claiming, step, handleContinue]);
 
-  async function handleClaim() {
-    await claimOnboardingPreview(previewSections);
-    router.push("/file");
+  function handleFinish() {
+    // The agent composed the Creed server-side, so the provider's in-memory
+    // state may still hold the seed (its background-sync guard won't overwrite
+    // local sections mid-flow). Use a full navigation so /file reloads from
+    // server state and renders the composed Creed rather than the seed.
+    window.location.href = "/file";
   }
 
   async function handleSkipOnboarding() {
     await claimOnboardingPreview(blankTemplateSections);
     router.push("/file");
+  }
+
+  async function handleCopyPrompt() {
+    await navigator.clipboard.writeText(getCreedPromptText("compose-my-creed"));
+    setPromptCopied(true);
+    window.setTimeout(() => setPromptCopied(false), 1600);
   }
 
   return (
@@ -461,7 +440,7 @@ export function OnboardingScreen() {
                 transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               >
                 <StepFrame
-                  wide={step === 3 || step === TOTAL_STEPS - 1}
+                  wide={step === 3 || step >= CONNECT_STEP}
                   narrow={step === 0}
                 >
                   {/* Step 0 - vibe picker */}
@@ -480,7 +459,6 @@ export function OnboardingScreen() {
                                 onClick={() => {
                                   setGroupOther(null);
                                   setGroupOtherValue("");
-                                  setRefinedDraft(null);
                                   updateOnboarding({
                                     creedType: type,
                                     stackSelections: {},
@@ -764,91 +742,109 @@ export function OnboardingScreen() {
                     </OnboardingStep>
                   ) : null}
 
-                  {/* Step 6 - API key + generate */}
-                  {step === 6 ? (
-                    isGenerating ? (
-                      <GeneratingState />
-                    ) : (
-                      <OnboardingStep
-                        title="Connect your API key."
-                        subtitle="Used to polish your initial profile and power AI features."
-                      >
-                        <AnimatedBlock index={0}>
-                          <FieldLabel>OpenRouter API key</FieldLabel>
-                          <Input
-                            data-disable-continue="true"
-                            type="password"
-                            value={apiKeyDraft}
-                            onChange={(event) => {
-                              setApiKeyDraft(event.target.value);
-                              setApiKeyReady(false);
-                              setApiKeyInvalid(false);
-                              setAiNotice(null);
-                            }}
-                            className="h-13 rounded-2xl border-[var(--creed-border)] px-4 text-[15px]"
-                            placeholder={
-                              savedKeyLastFour
-                                ? `Saved key ending in ${savedKeyLastFour}`
-                                : "sk-or-..."
-                            }
-                          />
-                        </AnimatedBlock>
-                        <AnimatedBlock index={1}>
-                          <FieldLabel>Model</FieldLabel>
-                          <ModelSelect
-                            value={selectedModelId}
-                            onChange={(modelId) => {
-                              setSelectedModelId(modelId);
-                              setApiKeyReady(false);
-                              setApiKeyInvalid(false);
-                            }}
-                            models={aiModels}
-                          />
-                        </AnimatedBlock>
-                        <AnimatedBlock index={2}>
-                          <Button
-                            type="button"
-                            style={{ borderRadius: "0.875rem" }}
-                            className={cn(
-                              "px-4 transition-colors",
-                              apiKeyInvalid
-                                ? "bg-[#DC2626] text-white hover:bg-[#B91C1C]"
-                                : apiKeyReady
-                                  ? "bg-[var(--creed-surface-raised)] text-[var(--creed-text-tertiary)] cursor-default"
-                                  : "bg-[var(--creed-text-primary)] text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-                            )}
-                            onClick={() => {
-                              if (apiKeyReady && !apiKeyInvalid) return;
-                              void handleSaveApiKey();
-                            }}
-                            disabled={apiKeySaving || apiKeyReady}
-                          >
-                            {apiKeySaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                            {apiKeyInvalid ? "Invalid" : apiKeyReady ? "Saved" : "Save API key"}
-                          </Button>
-                          {aiNotice ? (
-                            <p className="mt-3 text-[13px] text-[#B91C1C]">{aiNotice}</p>
-                          ) : null}
-                        </AnimatedBlock>
-                      </OnboardingStep>
-                    )
+                  {/* Step 6 - Connect an agent (hard gate) */}
+                  {step === CONNECT_STEP ? (
+                    <OnboardingStep
+                      title="Connect your agent."
+                      subtitle="Your agent composes your Creed next, from everything you just shared plus what it already knows about you. Connect at least one to continue."
+                    >
+                      <AnimatedBlock index={0}>
+                        <div className="creed-scrollbar md:max-h-[calc(100vh-380px)] md:overflow-y-auto md:pr-1">
+                          <div className="grid items-start gap-4 lg:grid-cols-2">
+                            {state.connections.map((connection) => {
+                              const { isConnected, lastSeen } = resolveConnectionStatus(
+                                connection,
+                                state.mcpClients
+                              );
+                              return (
+                                <ConnectionCard
+                                  key={connection.id}
+                                  connection={connection}
+                                  mcpUrl={state.mcpUrl}
+                                  isConnected={isConnected}
+                                  lastSeen={lastSeen}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </AnimatedBlock>
+                    </OnboardingStep>
                   ) : null}
 
-                  {/* Step 7 - Preview + Claim */}
-                  {step === TOTAL_STEPS - 1 ? (
+                  {/* Step 7 - Compose (the agent writes the full Creed) */}
+                  {step === COMPOSE_STEP ? (
                     <div className="text-center">
                       <AnimatedBlock index={0}>
                         <AnimatedHeadline
-                          text="Your profile is ready."
+                          text={composed ? "Your Creed is ready." : "Bring it to life."}
                           className="t-section justify-center text-[var(--creed-text-primary)]"
                         />
                       </AnimatedBlock>
                       <AnimatedBlock index={1}>
                         <p className="t-lede mx-auto mt-6 max-w-2xl text-[var(--creed-text-tertiary)]">
-                          Connect your first agent and it will pick up this profile automatically.
+                          {composed
+                            ? "Your agent composed your full Creed."
+                            : "Paste this into your connected agent. It turns everything from onboarding, plus what it already knows about you, into your full Creed."}
                         </p>
                       </AnimatedBlock>
+                      <AnimatedBlock index={2}>
+                        <div className="mx-auto mt-8 flex max-w-md flex-col items-center gap-5">
+                          {composed ? null : (
+                            <Button
+                              type="button"
+                              style={{ borderRadius: "0.875rem" }}
+                              className="min-w-[184px] justify-center bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                              onClick={() => void handleCopyPrompt()}
+                            >
+                              {promptCopied ? (
+                                <>
+                                  <AnimatedCheckmark className="h-4 w-4" size={16} />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <CopyIcon className="h-4 w-4" size={16} />
+                                  Copy starter prompt
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {connectedAgentsRoster}
+                          {allSubmitted ? (
+                            <div className="flex items-center gap-2 text-[13px] font-medium text-[#16A34A]">
+                              <AnimatedCheckmark className="h-4 w-4" size={16} />
+                              All agents submitted
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-[13px] text-[var(--creed-text-tertiary)]">
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                              {composed
+                                ? `${submittedCount} of ${state.mcpClients.length} agents submitted`
+                                : "Waiting for an agent to submit..."}
+                            </div>
+                          )}
+                        </div>
+                      </AnimatedBlock>
+                    </div>
+                  ) : null}
 
+                  {/* Step 8 - Preview the composed Creed before entering the app */}
+                  {step === PREVIEW_STEP ? (
+                    <div className="text-center">
+                      <AnimatedBlock index={0}>
+                        <AnimatedHeadline
+                          text="Your Creed."
+                          className="t-section justify-center text-[var(--creed-text-primary)]"
+                        />
+                      </AnimatedBlock>
+                      <AnimatedBlock index={1}>
+                        <p className="t-lede mx-auto mt-6 max-w-2xl text-[var(--creed-text-tertiary)]">
+                          {composerName
+                            ? `Composed by ${composerName}. Take a look, then head in.`
+                            : "Take a look, then head in."}
+                        </p>
+                      </AnimatedBlock>
                       <AnimatedBlock index={2}>
                         <motion.div
                           initial={{ opacity: 0, y: 18, scale: 0.985, filter: "blur(10px)" }}
@@ -856,7 +852,7 @@ export function OnboardingScreen() {
                           transition={{ duration: 0.6, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
                           className="mx-auto mt-10 max-w-[920px]"
                         >
-                          <CreedPreview sections={previewSections} />
+                          <CreedPreview sections={composedSections} />
                         </motion.div>
                       </AnimatedBlock>
                     </div>
@@ -869,7 +865,7 @@ export function OnboardingScreen() {
 
         <div className="flex items-center justify-between pt-3">
           <div>
-            {step === 0 && !isGenerating ? (
+            {step === 0 && !claiming ? (
               <button
                 type="button"
                 onClick={() => void handleSkipOnboarding()}
@@ -877,25 +873,7 @@ export function OnboardingScreen() {
               >
                 Skip
               </button>
-            ) : step === 6 ? (
-              <button
-                type="button"
-                onClick={() => setStep((current) => current - 1)}
-                className="inline-flex items-center gap-2 text-sm text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)]"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </button>
-            ) : step === TOTAL_STEPS - 1 ? (
-              <button
-                type="button"
-                onClick={handleRestart}
-                className="inline-flex items-center gap-2 text-sm text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)]"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Restart
-              </button>
-            ) : step > 0 && !isGenerating ? (
+            ) : step > 0 && !claiming ? (
               <button
                 type="button"
                 onClick={() => setStep((current) => current - 1)}
@@ -916,15 +894,19 @@ export function OnboardingScreen() {
                 style={{ borderRadius: "0.875rem" }}
                 className="bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)] disabled:bg-[var(--creed-border-strong)] disabled:text-[var(--creed-text-tertiary)]"
                 onClick={handleContinue}
-                disabled={isGenerating || (step === 6 && !apiKeyReady)}
+                disabled={
+                  claiming ||
+                  (step === CONNECT_STEP && !connected) ||
+                  (step === COMPOSE_STEP && !composed)
+                }
               >
-                {step === 6 ? (isGenerating ? "Generating" : "Generate") : "Continue"}
-                {step === 6 ? (
-                  isGenerating ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRightIcon className="h-4 w-4" size={16} />
-                  )
+                {claiming
+                  ? "Saving"
+                  : step === CONNECT_STEP && !connected
+                    ? "Connect an agent"
+                    : "Continue"}
+                {claiming ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : (
                   <ArrowRightIcon className="h-4 w-4" size={16} />
                 )}
@@ -934,10 +916,10 @@ export function OnboardingScreen() {
             <Button
               style={{ borderRadius: "0.875rem" }}
               className="bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-              onClick={() => void handleClaim()}
+              onClick={handleFinish}
             >
-              Claim
-              <Gift className="h-4 w-4" />
+              Go to my Creed
+              <ArrowRightIcon className="h-4 w-4" size={16} />
             </Button>
           )}
         </div>
@@ -986,108 +968,6 @@ function OnboardingStep({
         {subtitle}
       </p>
       <div className="mt-9 space-y-6">{children}</div>
-    </div>
-  );
-}
-
-function ModelSelect({
-  value,
-  onChange,
-  models,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  models: AiModelCatalogItem[];
-}) {
-  return (
-    <SearchableSelect
-      value={value}
-      onChange={onChange}
-      placeholder="Choose a model"
-      searchPlaceholder="Search models..."
-      triggerClassName="h-13 rounded-2xl px-4 text-[15px]"
-      options={models.map((model) => ({
-        key: model.id,
-        value: model.id,
-        label: model.name,
-        description: `${model.provider} · ${AI_MODEL_QUALITY_META[model.quality].label} · ${formatModelCost(model)}`,
-        search: `${model.name} ${model.provider} ${model.id} ${AI_MODEL_QUALITY_META[model.quality].label}`,
-      }))}
-      renderOption={(option) => {
-        const model = models.find((item) => item.id === option.value) ?? models[0];
-        const quality = AI_MODEL_QUALITY_META[model.quality];
-
-        return (
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: quality.color }} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-medium text-[var(--creed-text-primary)]">
-                {model.name}
-              </div>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--creed-text-secondary)]">
-                <span>{model.provider}</span>
-                <span>·</span>
-                <span>{quality.label}</span>
-                <span>·</span>
-                <span>{formatModelCost(model)}</span>
-              </div>
-            </div>
-          </div>
-        );
-      }}
-    />
-  );
-}
-
-// Loading screen shown while the AI synthesizer is running. Intentionally
-// chrome-free: no card, no border, no background swap. A small ring of
-// "thinking" lines cycles through with a smooth crossfade so the user
-// has something to read while OpenRouter does its thing.
-const GENERATING_LINES = [
-  "Reading what you wrote.",
-  "Inferring the parts you didn't say.",
-  "Tightening every sentence.",
-  "Trimming anything generic.",
-  "Sorting out the routines from the rituals.",
-  "Putting the contradictions on a sticky note.",
-  "Choosing your defaults.",
-  "Polishing the rough edges.",
-  "Making it sound like you.",
-  "Checking nothing reads like a horoscope.",
-  "Arranging it in the right order.",
-  "Almost there.",
-];
-
-function GeneratingState() {
-  const [lineIndex, setLineIndex] = useState(0);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setLineIndex((current) => (current + 1) % GENERATING_LINES.length);
-    }, 2400);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-6 px-6 text-center">
-      <h1 className="t-section text-[var(--creed-text-primary)]">
-        Building your profile.
-      </h1>
-
-      <div className="relative h-7 w-full max-w-md">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.p
-            key={lineIndex}
-            initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: -6, filter: "blur(4px)" }}
-            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 text-[15px] leading-7 text-[var(--creed-text-tertiary)]"
-          >
-            {GENERATING_LINES[lineIndex]}
-          </motion.p>
-        </AnimatePresence>
-      </div>
     </div>
   );
 }
@@ -1231,8 +1111,8 @@ function PillButton({
 
 function CreedPreview({ sections }: { sections: CreedSection[] }) {
   return (
-    <div className="overflow-hidden rounded-[14px] bg-[var(--creed-surface)] text-left shadow-[0_30px_90px_rgba(17,17,13,0.08)]">
-      <div className="creed-scrollbar md:h-[520px] md:overflow-y-auto">
+    <div className="overflow-hidden rounded-[16px] border border-[var(--creed-border)] bg-[var(--creed-surface)] text-left">
+      <div className="md:h-[520px] md:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="mx-auto max-w-[920px] px-6 py-8 md:px-10">
           <div className="space-y-10">
             {sections.map((section) => (
@@ -1256,10 +1136,15 @@ function CreedPreview({ sections }: { sections: CreedSection[] }) {
                   </div>
                 </div>
 
-                <div
-                  className="text-[15px] leading-8 text-[var(--creed-text-secondary)] [&_h2]:mb-3 [&_h2]:font-heading [&_h2]:text-[1.32rem] [&_h2]:font-medium [&_h2]:tracking-[-0.03em] [&_h2]:text-[var(--creed-text-primary)] [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-[1.08rem] [&_h3]:tracking-[-0.02em] [&_h3]:text-[var(--creed-text-primary)] [&_p]:mb-4 [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_ul]:font-sans [&_ul]:text-[14px] [&_ol]:mb-4 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_ol]:font-sans [&_ol]:text-[14px] [&_li]:text-[var(--creed-text-primary)] [&_blockquote]:rounded-r-[14px] [&_blockquote]:bg-[var(--creed-surface-raised)] [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:font-sans [&_blockquote]:text-[14px]"
-                  dangerouslySetInnerHTML={{ __html: sanitizePreviewHtml(section.content) }}
-                />
+                <div>
+                  <RichTextEditor
+                    sectionId={section.id}
+                    content={section.content}
+                    readOnly
+                    accentColor={accentColorMap[section.accent]}
+                    onChange={() => {}}
+                  />
+                </div>
               </section>
             ))}
           </div>

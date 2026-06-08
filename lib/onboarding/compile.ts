@@ -62,20 +62,6 @@ export type OnboardingPreviewDraft = {
   contextText: string | null;
 };
 
-export type OnboardingRefinement = Partial<{
-  identityText: string;
-  beliefsText: string | null;
-  goalsText: string;
-  workText: string;
-  workTags: string[];
-  preferences: string[];
-  constraintsText: string | null;
-  peopleText: string | null;
-  healthText: string | null;
-  routines: string[];
-  contextText: string | null;
-}>;
-
 export const CREED_TYPE_DEFINITIONS: Record<OnboardingState["creedType"], CreedTypeDefinition> = {
   personal: {
     id: "personal",
@@ -395,26 +381,6 @@ export function compileOnboardingDraft(onboarding: OnboardingState): OnboardingP
     peopleText: nullableParagraph(onboarding.people),
     healthText: nullableParagraph(onboarding.health),
     contextText: nullableParagraph(onboarding.context),
-  };
-}
-
-export function applyOnboardingRefinement(
-  draft: OnboardingPreviewDraft,
-  refinement: OnboardingRefinement
-): OnboardingPreviewDraft {
-  return {
-    ...draft,
-    identityText: refinement.identityText ?? draft.identityText,
-    beliefsText: refinement.beliefsText ?? draft.beliefsText,
-    goalsText: refinement.goalsText ?? draft.goalsText,
-    workText: refinement.workText ?? draft.workText,
-    workTags: refinement.workTags ?? draft.workTags,
-    preferences: refinement.preferences ?? draft.preferences,
-    constraintsText: refinement.constraintsText ?? draft.constraintsText,
-    peopleText: refinement.peopleText ?? draft.peopleText,
-    healthText: refinement.healthText ?? draft.healthText,
-    routines: refinement.routines ?? draft.routines,
-    contextText: refinement.contextText ?? draft.contextText,
   };
 }
 

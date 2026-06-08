@@ -131,6 +131,10 @@ export async function POST(request: Request) {
     sectionName: submittedBody.sectionId === "conventions" ? "Operating Principles" : submittedBody.sectionName,
     accent: submittedBody.accent ? normalizeLegacyAccent(submittedBody.accent) : submittedBody.accent,
     draft: normalizedDraft,
+    // agentName drives "who proposed this" in the activity sidebar. Default it
+    // rather than 400 when a low-friction tool omits it (mirrors the bookkeeping
+    // defaults below); the MCP route also now always sends a resolved name.
+    agentName: submittedBody.agentName || "Connected agent",
     changeType: submittedBody.changeType || fallback.changeType,
     impact: submittedBody.impact || fallback.impact,
     confidence: submittedBody.confidence || fallback.confidence,

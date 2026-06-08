@@ -4,7 +4,6 @@ import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { Button } from "@/components/ui/button";
 import { getAgentIconKind } from "@/lib/agent-icon";
 import { getOAuthClient, isAllowedRedirectUri } from "@/lib/oauth";
-import { hasPersistedCreed } from "@/lib/creed-backend";
 import { hasPaidEntitlement } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -148,23 +147,10 @@ export default async function AuthorizePage({
     );
   }
 
-  const hasCreed = await hasPersistedCreed(supabase, user.id);
-  if (!hasCreed) {
-    return (
-      <Shell>
-        <Message
-          title="Finish your Creed first"
-          body="You don't have a Creed yet. Complete onboarding, then start the connection again from your agent."
-        />
-        <div className="mt-6 flex justify-center">
-          <Link href="/onboarding">
-            <Button className="rounded-md">Finish onboarding</Button>
-          </Link>
-        </div>
-      </Shell>
-    );
-  }
-
+  // No Creed gate here on purpose: in onboarding the user connects an agent
+  // BEFORE the Creed exists - the agent is what composes the initial Creed - so
+  // requiring a persisted Creed would block the core flow. Signed-in + paid is
+  // the bar; the agent reads an empty/seed Creed fine until it composes.
   const iconKind = getAgentIconKind(client.clientName);
 
   return (

@@ -6,7 +6,6 @@ import {
   isAllowedRedirectUri,
   issueAuthorizationCode,
 } from "@/lib/oauth";
-import { hasPersistedCreed } from "@/lib/creed-backend";
 import { hasPaidEntitlement } from "@/lib/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -73,11 +72,11 @@ export async function POST(request: Request) {
     });
   }
 
-  // Eligibility is re-checked at grant time: MCP is a paid feature and needs a
-  // real Creed to read.
+  // Eligibility re-check at grant time: MCP is a paid feature. We intentionally
+  // do NOT require a finished Creed here - agents connect during onboarding and
+  // the agent is what composes the initial Creed, so a Creed need not exist yet.
   const paid = await hasPaidEntitlement(supabase, user.id);
-  const hasCreed = paid && (await hasPersistedCreed(supabase, user.id));
-  if (!paid || !hasCreed) {
+  if (!paid) {
     return badRequest("This account is not set up to connect agents yet.");
   }
 
