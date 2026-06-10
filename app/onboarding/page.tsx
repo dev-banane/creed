@@ -7,18 +7,19 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 // Onboarding is free and lives outside the (creed-app) route group. Anyone
-// signed in can run it (connect an agent, compose, preview); the paywall is the
-// hosted app, not onboarding. We pass two signals to the screen:
+// signed in can run it (answer questions, build with their assistant via a
+// copy-paste prompt, preview); the paywall is the hosted app, not onboarding.
+// We pass two signals to the screen:
 //   - paid: switches the final button between "Get Creed" (checkout) and
 //     "Go to my Creed" (straight into the app).
 //   - initialStage: resume point. A composed Creed resumes on the preview; a
-//     claimed-but-not-composed seed resumes on the Connect step; otherwise the
+//     claimed-but-not-composed seed resumes on the prompt step; otherwise the
 //     screen starts at step 0.
 export default async function OnboardingPage() {
   // Default to paid=true when Supabase isn't configured (local dev) so the
   // screen mirrors the layout, which skips the gate entirely in that mode.
   let paid = true;
-  let initialStage: "connect" | "preview" | undefined;
+  let initialStage: "prompt" | "preview" | undefined;
 
   if (isSupabaseConfigured()) {
     const supabase = await createSupabaseServerClient();
@@ -43,7 +44,7 @@ export default async function OnboardingPage() {
       if (composed) {
         initialStage = "preview";
       } else if (result.hasPersistedCreed) {
-        initialStage = "connect";
+        initialStage = "prompt";
       }
     } catch (error) {
       if (!isSupabaseTableMissingError(error)) {

@@ -409,31 +409,6 @@ const tools = [
       required: ["sectionId"],
     },
   },
-  {
-    name: "compose_creed",
-    description:
-      "One-time initial build of the user's Creed during onboarding. The user just answered onboarding questions, producing a modest deterministic draft - read it with read_creed first. Rewrite each section's body into a sharp, durable profile using what you already know about the user, then call this ONCE with the full set. Keep each section's sectionId from read_creed; put the rewritten body in contentMarkdown. Only available before any section has been agent-edited; afterward use the creed_* tools to propose ongoing changes.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        agentName: { type: "string" },
-        sections: {
-          type: "array",
-          description:
-            "The composed Creed: one entry per existing section. Keep the sectionId from read_creed and put the rewritten body in contentMarkdown.",
-          items: {
-            type: "object",
-            properties: {
-              sectionId: { type: "string" },
-              contentMarkdown: { type: "string" },
-            },
-            required: ["sectionId", "contentMarkdown"],
-          },
-        },
-      },
-      required: ["agentName", "sections"],
-    },
-  },
 ];
 
 // Conditional tool exposure. `direct_edit_creed` only works when the user has
@@ -445,19 +420,8 @@ function listToolsFor(state: CreedState) {
   // edits; otherwise hide it so the agent doesn't reach for a tool it'd be
   // 403'd from.
   const anyDirect = state.sections.some((section) => section.agentPermission === "direct");
-  // compose_creed is the one-time onboarding initialize: offer it until an agent
-  // has composed (no section is agent-authored yet). We deliberately do NOT also
-  // require sections.length > 0 here: clients cache tools/list (we advertise
-  // listChanged: false), so an agent that connects before the seed draft is
-  // claimed would cache a list with no compose_creed and never see it again. The
-  // /api/creed/compose endpoint is the real gate (it requires sections to exist
-  // and none agent-authored).
-  const composeAvailable = !state.sections.some(
-    (section) => section.lastEditedType === "agent"
-  );
   const hidden = new Set<string>();
   if (!anyDirect) hidden.add("direct_edit_creed");
-  if (!composeAvailable) hidden.add("compose_creed");
   return hidden.size > 0 ? tools.filter((tool) => !hidden.has(tool.name)) : tools;
 }
 
@@ -715,23 +679,6 @@ async function handleToolCall(
 
     await callInternalCreedRoute(request, "/api/creed/write", state.directEditToken, {
       ...args,
-      agentName,
-      integration: "mcp",
-    });
-    return jsonToolResult({ ok: true });
-  }
-
-  if (name === "compose_creed") {
-    // One-time onboarding initialize. The /api/creed/compose route is the
-    // authoritative window gate; this early check just gives a clearer message
-    // once the Creed is already live.
-    if (state.sections.some((section) => section.lastEditedType === "agent")) {
-      throw new Error(
-        "Your Creed has already been composed. Use the creed_* tools to propose ongoing edits."
-      );
-    }
-    await callInternalCreedRoute(request, "/api/creed/compose", state.directEditToken, {
-      sections: args.sections,
       agentName,
       integration: "mcp",
     });

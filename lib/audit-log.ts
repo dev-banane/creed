@@ -10,6 +10,7 @@ export type AuditAction =
   | "account.deleted"
   | "ai.settings_updated"
   | "creed.claimed"
+  | "creed.composed"
   | "creed.imported";
 
 export type AuditLogInput = {

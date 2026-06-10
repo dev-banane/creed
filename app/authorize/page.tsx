@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { Button } from "@/components/ui/button";
 import { getAgentIconKind } from "@/lib/agent-icon";
 import { getOAuthClient, isAllowedRedirectUri } from "@/lib/oauth";
+import { hasPaidEntitlement } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -128,11 +130,44 @@ export default async function AuthorizePage({
     );
   }
 
-  // No payment or Creed gate here on purpose. Connecting an agent is free: it's
-  // how the user composes their Creed during onboarding (the agent reads an
-  // empty/seed Creed fine until it composes), and the paywall is the hosted app
-  // (/file etc.), not the agent. Signed-in is the only bar.
   const iconKind = getAgentIconKind(client.clientName);
+
+  // No Creed gate here on purpose: a paid user may connect before any Creed
+  // content exists (the agent reads an empty/seed Creed fine). Signed-in + paid
+  // is the bar; onboarding composes via copy-paste, not over MCP. Unpaid users
+  // get the same agent-specific consent layout, just with a single "Go to
+  // Creed" CTA instead of Allow / Deny.
+  const paid = await hasPaidEntitlement(supabase, user.id);
+  if (!paid) {
+    return (
+      <Shell>
+        <div className="flex items-center justify-center gap-4">
+          <IntegrationGlyph kind="mcp" framed={false} className="h-14 w-14" />
+          <span className="text-[18px] text-[var(--creed-text-tertiary)]">+</span>
+          <IntegrationGlyph kind={iconKind} framed={false} className="h-14 w-14" />
+        </div>
+
+        <h1 className="mt-6 text-[18px] font-medium text-[var(--creed-text-primary)]">
+          Set up Creed to connect {client.clientName}
+        </h1>
+        <p className="mt-3 text-[14px] leading-7 text-[var(--creed-text-secondary)]">
+          Connecting an agent is part of Creed. Finish setting up your Creed, then
+          start the connection from {client.clientName} again.
+        </p>
+        <p className="mt-2 text-[13px] text-[var(--creed-text-tertiary)]">
+          Signed in as {user.email}
+        </p>
+
+        <div className="mt-7 flex justify-center">
+          <Link href="/">
+            <Button className="h-9 rounded-md bg-[#2563EB] px-6 text-white hover:bg-[#1D4ED8]">
+              Go to Creed
+            </Button>
+          </Link>
+        </div>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>

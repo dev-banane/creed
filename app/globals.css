@@ -376,6 +376,44 @@
   }
 }
 
+/* Onboarding "Copy prompt" button: smoothly cycles through the brand palette
+   (mono, blue, green, yellow, orange, red, purple). Fixed dark mono + white
+   text so the label stays legible across every colour and both themes. */
+.creed-copy-cycle {
+  animation: creed-copy-cycle 9s ease-in-out infinite alternate;
+}
+
+@keyframes creed-copy-cycle {
+  0% {
+    background-color: #1f1f1a;
+  }
+  16.6% {
+    background-color: #2563eb;
+  }
+  33.3% {
+    background-color: #059669;
+  }
+  50% {
+    background-color: #eab308;
+  }
+  66.6% {
+    background-color: #ea580c;
+  }
+  83.3% {
+    background-color: #dc2626;
+  }
+  100% {
+    background-color: #7c3aed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creed-copy-cycle {
+    animation: none;
+    background-color: #1f1f1a;
+  }
+}
+
 .ProseMirror {
   min-height: 56px;
   font-family: var(--font-geist-sans), sans-serif;

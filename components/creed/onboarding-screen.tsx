@@ -12,17 +12,16 @@ import { CopyIcon } from "@/components/ui/copy";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
-import { ConnectionCard, resolveConnectionStatus } from "@/components/creed/connection-card";
 import { useCreed } from "@/components/creed/creed-provider";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
 import { useStripeCheckout } from "@/components/marketing/use-stripe-checkout";
 import {
   accentColorMap,
+  type AgentIconKind,
   type CreedSection,
-  type McpClient,
   type OnboardingState,
 } from "@/lib/creed-data";
-import { getCreedPromptText } from "@/lib/creed-prompts";
+import { buildComposePrompt } from "@/lib/creed-prompts";
 import { splitPreservingLigatures } from "@/lib/landing-text";
 import {
   CREED_TYPE_OPTIONS,
@@ -33,18 +32,18 @@ import {
 import { cn } from "@/lib/utils";
 
 // 9-step flow indexed 0-8: vibe / identity / direction / tools / preferences /
-// daily context / connect / compose / preview. The questionnaire feeds a
-// deterministic seed draft; the connected agent composes the real initial
-// Creed, which the user reviews on the preview step before entering the app.
-// Each step picks an accent for the top progress bar so the colour subtly
-// tracks where the user is in the flow.
+// daily context / prompt / paste / preview. The questionnaire feeds a
+// deterministic seed draft; the user copies a prompt into any assistant, which
+// returns a markdown Creed they paste back. No MCP in onboarding - the agent
+// connection is a paid feature set up later. Each step picks an accent for the
+// top progress bar so the colour tracks where the user is in the flow.
 const TOTAL_STEPS = 9;
-const CONNECT_STEP = 6;
-const COMPOSE_STEP = 7;
+const PROMPT_STEP = 6;
+const PASTE_STEP = 7;
 const PREVIEW_STEP = 8;
 // Advancing past the last questionnaire step silently claims the seed draft so
-// the agent has onboarding context to read over MCP before it composes.
-const FINAL_QUESTION_STEP = CONNECT_STEP - 1;
+// the paste-compose endpoint has it to map the pasted Creed onto.
+const FINAL_QUESTION_STEP = PROMPT_STEP - 1;
 
 const stepAccentMap = [
   accentColorMap.identity, // 0 vibe
@@ -53,8 +52,8 @@ const stepAccentMap = [
   accentColorMap.tools, // 3 tools
   accentColorMap.preferences, // 4 preferences + constraints
   accentColorMap.workflows, // 5 daily context
-  "#2563EB", // 6 connect
-  accentColorMap.identity, // 7 compose
+  "#2563EB", // 6 prompt
+  accentColorMap.identity, // 7 paste
   accentColorMap.identity, // 8 preview
 ];
 
@@ -70,24 +69,18 @@ const typeThemes: Record<OnboardingState["creedType"], { accent: string; tint: s
 const defaultStepTitle = "Pick the closest vibe.";
 const defaultStepSubtitle = "It only changes the question wording and examples.";
 
-// MCP clients report names like "Claude Code (creed)" - the trailing
-// "(<server alias>)" is just the local connector name and is noise in the UI.
-function agentDisplayName(name: string) {
-  return name.replace(/\s*\([^)]*\)\s*$/, "").trim() || name;
-}
-
 export function OnboardingScreen({
   paid,
   initialStage,
 }: {
   paid: boolean;
-  initialStage?: "connect" | "preview";
+  initialStage?: "prompt" | "preview";
 }) {
   const router = useRouter();
   const { state, updateOnboarding, claimOnboardingPreview } = useCreed();
   const { startCheckout, submitting: checkoutSubmitting } = useStripeCheckout();
   const [step, setStep] = useState(
-    initialStage === "preview" ? PREVIEW_STEP : initialStage === "connect" ? CONNECT_STEP : 0
+    initialStage === "preview" ? PREVIEW_STEP : initialStage === "prompt" ? PROMPT_STEP : 0
   );
   const [groupOther, setGroupOther] = useState<string | null>(null);
   const [groupOtherValue, setGroupOtherValue] = useState("");
@@ -103,80 +96,17 @@ export function OnboardingScreen({
     [state.onboarding]
   );
 
-  // The Connect step polls /api/app/state directly (effect below) and overrides
-  // the provider's roster the moment an agent registers - so detection is
-  // near-instant even for CLI agents (Codex, Claude Code, OpenCode) that never
-  // trigger the provider's focus/visibility sync. Falls back to provider state.
-  const [serverMcpClients, setServerMcpClients] = useState<McpClient[] | null>(null);
-  // Prefer the live provider roster once it has anything; the polled snapshot is
-  // just the fast-path bridge until the provider's slower sync catches up, so it
-  // never goes stale (e.g. a second agent connecting later still shows up).
-  const mcpClients = state.mcpClients.length > 0 ? state.mcpClients : (serverMcpClients ?? []);
-
-  // Connect gate: connected once the roster has any client (or the provider has
-  // already marked the session connected).
-  const connected = state.mcpStatus === "connected" || mcpClients.length > 0;
-  // Compose "write landed" signal. The Compose step polls the server directly
-  // (effect below) and flips these the moment an agent-authored section appears,
-  // independent of the provider's background-sync merge guard - which during
-  // onboarding can refuse to adopt the agent's compose and leave the screen
-  // stuck on "waiting" until a manual refresh.
-  const [submittedViaServer, setSubmittedViaServer] = useState(false);
-  const [serverComposedSections, setServerComposedSections] = useState<CreedSection[] | null>(null);
-  const composedSections = serverComposedSections ?? state.sections;
+  // Paste-compose result: set from the /api/app/onboarding/compose response when
+  // the user pastes the markdown their assistant produced. Falls back to provider
+  // state so a resuming, already-composed user still sees their Creed.
+  const [composedResult, setComposedResult] = useState<CreedSection[] | null>(null);
+  const [pasted, setPasted] = useState("");
+  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [pasteSubmitting, setPasteSubmitting] = useState(false);
+  const composedSections = composedResult ?? state.sections;
   const composed =
-    submittedViaServer || composedSections.some((section) => section.lastEditedType === "agent");
-  // Which agent composed (compose_creed is one-time, so at most one). Used to
-  // attribute the finished Creed on the Compose step.
-  const composerName =
-    composedSections.find((section) => section.lastEditedType === "agent")?.lastEditedBy ?? null;
-
-  // Has a given connected agent actually sent a Creed? compose is one-time, so
-  // with a single agent the composer is unambiguous; with several we match the
-  // composer by alias-stripped name.
-  const isAgentSubmitted = (clientName: string) =>
-    composed &&
-    (mcpClients.length === 1 ||
-      agentDisplayName(clientName).toLowerCase() ===
-        agentDisplayName(composerName ?? "").toLowerCase());
-  const submittedCount = mcpClients.filter((client) => isAgentSubmitted(client.name)).length;
-  const allSubmitted = mcpClients.length > 0 && submittedCount === mcpClients.length;
-
-  // Roster of connected agents with their submit status, shown on the Compose
-  // step so the user can see which agent(s) have actually sent a Creed - works
-  // whether they have one agent or several connected.
-  const connectedAgentsRoster =
-    mcpClients.length > 0 ? (
-      <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-        {mcpClients.map((client) => {
-          const submitted = isAgentSubmitted(client.name);
-          return (
-            <div
-              key={client.id}
-              className="flex items-center justify-between gap-3 rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 py-2.5"
-            >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <IntegrationGlyph kind={client.icon} framed={false} className="h-6 w-6 shrink-0" />
-                <span className="truncate text-[14px] text-[var(--creed-text-primary)]">
-                  {agentDisplayName(client.name)}
-                </span>
-              </div>
-              {submitted ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--creed-text-secondary)]">
-                  <span className="h-2 w-2 rounded-[3px] bg-[#16A34A]" />
-                  Submitted
-                </span>
-              ) : (
-                <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-[var(--creed-text-tertiary)]">
-                  <span className="h-2 w-2 rounded-[3px] bg-[var(--creed-border-strong)]" />
-                  Not submitted
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    ) : null;
+    composedResult !== null ||
+    state.sections.some((section) => section.lastEditedType === "agent");
 
   // A returning PAID user who already has a composed Creed skips onboarding and
   // goes straight to /file. We gate on `paid` so unpaid composed users (whom the
@@ -188,66 +118,6 @@ export function OnboardingScreen({
       router.replace("/file");
     }
   }, [router, paid, step, composed]);
-
-  // On the Compose step, poll the server directly so the screen flips the moment
-  // the agent's compose lands. We read /api/app/state ourselves rather than going
-  // through the provider, whose background-sync merge guard can refuse to adopt
-  // the agent's sections mid-onboarding; this path can't be blocked. (The roster
-  // of connected agents stays fresh via the provider's own background sync.)
-  useEffect(() => {
-    if (step !== COMPOSE_STEP || composed) {
-      return;
-    }
-    let cancelled = false;
-    async function checkForCompose() {
-      try {
-        const res = await fetch("/api/app/state", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { state?: { sections?: CreedSection[] } };
-        const sections = data.state?.sections ?? [];
-        if (!cancelled && sections.some((section) => section.lastEditedType === "agent")) {
-          setServerComposedSections(sections);
-          setSubmittedViaServer(true);
-        }
-      } catch {
-        // Ignore transient poll errors; the next tick retries.
-      }
-    }
-    const id = window.setInterval(checkForCompose, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [step, composed]);
-
-  // On the Connect step, poll the roster directly so the card flips within a few
-  // seconds even for CLI agents that never trigger the provider's focus sync.
-  // Stops as soon as a client appears (the `connected` dep re-runs the effect).
-  useEffect(() => {
-    if (step !== CONNECT_STEP || connected) {
-      return;
-    }
-    let cancelled = false;
-    async function checkForConnect() {
-      try {
-        const res = await fetch("/api/app/state", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { state?: { mcpClients?: McpClient[] } };
-        const clients = data.state?.mcpClients ?? [];
-        if (!cancelled && clients.length > 0) {
-          setServerMcpClients(clients);
-        }
-      } catch {
-        // Ignore transient poll errors; the next tick retries.
-      }
-    }
-    void checkForConnect();
-    const id = window.setInterval(checkForConnect, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [step, connected]);
 
   function toggleCommunicationStyle(
     option: "Direct" | "Collaborative" | "Thorough" | "Concise"
@@ -302,34 +172,72 @@ export function OnboardingScreen({
 
   const handleContinue = useCallback(async () => {
     if (step === FINAL_QUESTION_STEP) {
-      // Silently claim the deterministic seed draft so the agent has onboarding
-      // context to read over MCP, then move to Connect. The draft is never
-      // shown as a finished Creed - the connected agent composes the real
-      // initial Creed at the final step.
+      // Silently claim the deterministic seed draft so the paste-compose endpoint
+      // has it to map the pasted Creed onto, then move to the prompt step.
       if (claiming) return;
       setClaiming(true);
       try {
         await claimOnboardingPreview(previewSections);
-        setStep(CONNECT_STEP);
+        setStep(PROMPT_STEP);
       } finally {
         setClaiming(false);
       }
       return;
     }
-    if (step === CONNECT_STEP) {
-      // Hard gate: only advance once an agent is connected.
-      if (!connected) return;
-      setStep(COMPOSE_STEP);
+    if (step === PROMPT_STEP) {
+      // No gate: they copy the prompt here and paste the result on the next step.
+      setStep(PASTE_STEP);
       return;
     }
-    if (step === COMPOSE_STEP) {
-      // Hard gate: only advance once an agent has composed the Creed.
-      if (!composed) return;
-      setStep(PREVIEW_STEP);
+    if (step === PASTE_STEP) {
+      if (pasteSubmitting) return;
+      const markdown = pasted.trim();
+      if (!markdown) {
+        setPasteError("Paste the markdown your assistant gave you.");
+        return;
+      }
+      setPasteSubmitting(true);
+      setPasteError(null);
+      try {
+        const res = await fetch("/api/app/onboarding/compose", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ markdown }),
+        });
+        // Already composed (a re-paste): just move on to the preview.
+        if (res.status === 409) {
+          setStep(PREVIEW_STEP);
+          return;
+        }
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          matched?: number;
+          sections?: CreedSection[];
+          error?: string;
+        };
+        if (!res.ok) {
+          setPasteError(
+            typeof data.error === "string" ? data.error : "Could not save that. Try again."
+          );
+          return;
+        }
+        if (!data.ok || !data.matched || !data.sections) {
+          setPasteError(
+            "That doesn't look like your Creed. Paste the whole markdown your assistant gave you."
+          );
+          return;
+        }
+        setComposedResult(data.sections);
+        setStep(PREVIEW_STEP);
+      } catch {
+        setPasteError("Could not save that. Check your connection and try again.");
+      } finally {
+        setPasteSubmitting(false);
+      }
       return;
     }
     setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
-  }, [step, claiming, connected, composed, previewSections, claimOnboardingPreview]);
+  }, [step, claiming, pasted, pasteSubmitting, previewSections, claimOnboardingPreview]);
 
   useEffect(() => {
     function onWindowKeyDown(event: KeyboardEvent) {
@@ -368,15 +276,14 @@ export function OnboardingScreen({
   }, [claiming, step, handleContinue]);
 
   function handleFinish() {
-    // The agent composed the Creed server-side, so the provider's in-memory
-    // state may still hold the seed (its background-sync guard won't overwrite
-    // local sections mid-flow). Use a full navigation so /file reloads from
-    // server state and renders the composed Creed rather than the seed.
+    // The Creed is persisted server-side (the paste-compose endpoint wrote it),
+    // so use a full navigation: /file reloads from server state and renders the
+    // composed Creed rather than the provider's possibly-stale seed.
     window.location.href = "/file";
   }
 
   async function handleCopyPrompt() {
-    await navigator.clipboard.writeText(getCreedPromptText("compose-my-creed"));
+    await navigator.clipboard.writeText(buildComposePrompt(previewSections));
     setPromptCopied(true);
     window.setTimeout(() => setPromptCopied(false), 1600);
   }
@@ -406,7 +313,7 @@ export function OnboardingScreen({
                 transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               >
                 <StepFrame
-                  wide={step === 3 || step >= CONNECT_STEP}
+                  wide={step === 3 || step >= PROMPT_STEP}
                   narrow={step === 0}
                 >
                   {/* Step 0 - vibe picker */}
@@ -708,59 +615,52 @@ export function OnboardingScreen({
                     </OnboardingStep>
                   ) : null}
 
-                  {/* Step 6 - Connect an agent (hard gate) */}
-                  {step === CONNECT_STEP ? (
-                    <OnboardingStep
-                      title="Connect your agent."
-                      subtitle="Your agent composes your Creed next, from everything you just shared plus what it already knows about you. Connect at least one to continue."
-                    >
-                      <AnimatedBlock index={0}>
-                        <div className="creed-scrollbar md:max-h-[calc(100vh-380px)] md:overflow-y-auto md:pr-1">
-                          <div className="grid items-start gap-4 lg:grid-cols-2">
-                            {state.connections.map((connection) => {
-                              const { isConnected, lastSeen } = resolveConnectionStatus(
-                                connection,
-                                mcpClients
-                              );
-                              return (
-                                <ConnectionCard
-                                  key={connection.id}
-                                  connection={connection}
-                                  mcpUrl={state.mcpUrl}
-                                  isConnected={isConnected}
-                                  lastSeen={lastSeen}
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </AnimatedBlock>
-                    </OnboardingStep>
-                  ) : null}
-
-                  {/* Step 7 - Compose (the agent writes the full Creed) */}
-                  {step === COMPOSE_STEP ? (
+                  {/* Step 6 - Copy the compose prompt */}
+                  {step === PROMPT_STEP ? (
                     <div className="text-center">
                       <AnimatedBlock index={0}>
                         <AnimatedHeadline
-                          text={composed ? "Your Creed is ready." : "Bring it to life."}
+                          text="Build it with your assistant."
                           className="t-section justify-center text-[var(--creed-text-primary)]"
                         />
                       </AnimatedBlock>
                       <AnimatedBlock index={1}>
                         <p className="t-lede mx-auto mt-6 max-w-2xl text-[var(--creed-text-tertiary)]">
-                          {composed
-                            ? "Your agent composed your full Creed."
-                            : "Paste this into your connected agent. It turns everything from onboarding, plus what it already knows about you, into your full Creed."}
+                          Copy this prompt and paste it into ChatGPT, Claude, or any AI you use. It
+                          turns everything you just shared into your full Creed.
                         </p>
                       </AnimatedBlock>
                       <AnimatedBlock index={2}>
-                        <div className="mx-auto mt-8 flex max-w-md flex-col items-center gap-5">
-                          {composed ? null : (
+                        <div className="mx-auto mt-9 flex w-full max-w-lg flex-col rounded-[14px] border border-[var(--creed-border)] bg-[var(--creed-surface)] p-5 text-left">
+                          <div className="flex flex-wrap items-center gap-4">
+                            {(
+                              [
+                                "chatgpt",
+                                "claude",
+                                "claudecode",
+                                "codex",
+                                "cursor",
+                                "grok",
+                                "hermes",
+                                "openclaw",
+                              ] as AgentIconKind[]
+                            ).map((kind) => (
+                              <IntegrationGlyph
+                                key={kind}
+                                kind={kind}
+                                framed={false}
+                                className="h-10 w-10 shrink-0"
+                              />
+                            ))}
+                          </div>
+                          <p className="mt-4 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
+                            Paste this prompt into any AI. It replies with a markdown Creed you paste
+                            back into Creed.
+                          </p>
+                          <div className="mt-4">
                             <Button
                               type="button"
-                              style={{ borderRadius: "0.875rem" }}
-                              className="min-w-[184px] justify-center bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                              className="creed-copy-cycle min-w-[116px] justify-center rounded-md px-4 text-white"
                               onClick={() => void handleCopyPrompt()}
                             >
                               {promptCopied ? (
@@ -771,28 +671,38 @@ export function OnboardingScreen({
                               ) : (
                                 <>
                                   <CopyIcon className="h-4 w-4" size={16} />
-                                  Copy starter prompt
+                                  Copy prompt
                                 </>
                               )}
                             </Button>
-                          )}
-                          {connectedAgentsRoster}
-                          {allSubmitted ? (
-                            <div className="flex items-center gap-2 text-[13px] font-medium text-[#16A34A]">
-                              <AnimatedCheckmark className="h-4 w-4" size={16} />
-                              All agents submitted
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 text-[13px] text-[var(--creed-text-tertiary)]">
-                              <LoaderCircle className="h-4 w-4 animate-spin" />
-                              {composed
-                                ? `${submittedCount} of ${mcpClients.length} agents submitted`
-                                : "Waiting for an agent to submit..."}
-                            </div>
-                          )}
+                          </div>
                         </div>
                       </AnimatedBlock>
                     </div>
+                  ) : null}
+
+                  {/* Step 7 - Paste the markdown the assistant produced */}
+                  {step === PASTE_STEP ? (
+                    <OnboardingStep
+                      title="Paste your Creed."
+                      subtitle="Paste the markdown your assistant gave you - we'll turn it into your Creed."
+                    >
+                      <AnimatedBlock index={0}>
+                        <Textarea
+                          data-disable-continue="true"
+                          value={pasted}
+                          onChange={(event) => {
+                            setPasted(event.target.value);
+                            if (pasteError) setPasteError(null);
+                          }}
+                          className="min-h-[220px] max-h-[44vh] resize-none overflow-y-auto rounded-2xl border-[var(--creed-border)] px-4 py-4 font-mono text-[14px] leading-7"
+                          placeholder={"## Identity\n\nPaste the full markdown your assistant produced here."}
+                        />
+                        {pasteError ? (
+                          <p className="mt-3 text-[13px] text-[#DC2626]">{pasteError}</p>
+                        ) : null}
+                      </AnimatedBlock>
+                    </OnboardingStep>
                   ) : null}
 
                   {/* Step 8 - Preview the composed Creed before entering the app */}
@@ -806,9 +716,7 @@ export function OnboardingScreen({
                       </AnimatedBlock>
                       <AnimatedBlock index={1}>
                         <p className="t-lede mx-auto mt-6 max-w-2xl text-[var(--creed-text-tertiary)]">
-                          {composerName
-                            ? `Composed by ${composerName}. Take a look, then head in.`
-                            : "Take a look, then head in."}
+                          Take a look, then head in.
                         </p>
                       </AnimatedBlock>
                       <AnimatedBlock index={2}>
@@ -863,16 +771,12 @@ export function OnboardingScreen({
                 onClick={handleContinue}
                 disabled={
                   claiming ||
-                  (step === CONNECT_STEP && !connected) ||
-                  (step === COMPOSE_STEP && !composed)
+                  pasteSubmitting ||
+                  (step === PASTE_STEP && !pasted.trim())
                 }
               >
-                {claiming
-                  ? "Saving"
-                  : step === CONNECT_STEP && !connected
-                    ? "Connect an agent"
-                    : "Continue"}
-                {claiming ? (
+                {claiming ? "Saving" : pasteSubmitting ? "Composing" : "Continue"}
+                {claiming || pasteSubmitting ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : (
                   <ArrowRightIcon className="h-4 w-4" size={16} />
