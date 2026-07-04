@@ -130,6 +130,9 @@ export async function POST(request: Request) {
             temperature: 0,
             timeoutMs: 240000,
             responseFormat,
+            // Land on the fastest provider (Groq / Cerebras) instead of
+            // OpenRouter's cheapest-first default, so edits stream in fast.
+            providerPreferences: { sort: "throughput" },
             signal: request.signal,
             messages,
             onDelta: () => {
@@ -160,6 +163,7 @@ export async function POST(request: Request) {
             temperature: 0,
             timeoutMs: 110000,
             responseFormat,
+            providerPreferences: { sort: "throughput" },
             messages,
           });
         }

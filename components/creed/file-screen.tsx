@@ -1660,10 +1660,13 @@ export function FileScreen() {
           const element = container?.querySelector<HTMLElement>(selector);
 
           if (container && element) {
-            if (intent.type === "proposal") {
-              handleProposalSelect(intent.proposalId);
-            } else {
-              handleSectionSelect(intent.sectionId);
+            // Scroll the node directly (same as the on-/file review + the
+            // "Jump to section" button). The offsetTop-based helpers weren't
+            // landing on a fresh navigation, so match the mechanism that works.
+            element.scrollIntoView({ behavior: "smooth", block: "start" });
+            if (intent.type === "section") {
+              scrollLockRef.current = { sectionId: intent.sectionId, until: Date.now() + 1200 };
+              setActiveShellSection(intent.sectionId);
             }
             window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
             return;
@@ -1686,7 +1689,7 @@ export function FileScreen() {
       window.clearTimeout(timeoutId);
       window.cancelAnimationFrame(frameId);
     };
-  }, [handleSectionSelect, handleProposalSelect, openComposer, scrollComposerIntoView]);
+  }, [setActiveShellSection, openComposer, scrollComposerIntoView]);
 
   return (
     <>

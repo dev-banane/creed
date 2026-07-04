@@ -86,11 +86,14 @@ export function getFeatureModelId(feature: AiFeature): string {
   return process.env[FEATURE_MODEL_ENV[feature]]?.trim() || FEATURE_MODEL_DEFAULT[feature];
 }
 
-// Panel's Agent mode bills under the "panel" feature but runs a different,
-// stronger model than Search/Ask: it writes real edits, so quality beats the
-// millisecond latency the navigator needs. Defaults to GLM 5.2.
+// Panel's Agent mode bills under the "panel" feature. It writes real edits, so
+// it needs a capable model - but a slow one times out on longer requests and
+// feels awful for simple edits, so it defaults to a strong open-weights model
+// that Groq and Cerebras serve at very high tokens/sec (the route requests
+// throughput-sorted routing to land on that fast silicon). Override with
+// CREED_AGENT_MODEL if you want to trade speed for a heavier model.
 export function getAgentModelId(): string {
-  return process.env.CREED_AGENT_MODEL?.trim() || "z-ai/glm-5.2";
+  return process.env.CREED_AGENT_MODEL?.trim() || "openai/gpt-oss-120b";
 }
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";

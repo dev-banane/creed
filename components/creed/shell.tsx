@@ -14,7 +14,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { AnimatedMenuIconItem } from "@/components/creed/animated-icon-action";
 import { FeedbackMenuItem } from "@/components/creed/feedback-menu";
 import { BookTextIcon } from "@/components/ui/book-text";
@@ -148,6 +148,16 @@ export function CreedShell({
   const searchIconRef = useRef<SearchIconHandle | null>(null);
   const agentRun = useSyncExternalStore(subscribeAgentRunner, getAgentRunnerSnapshot, getAgentRunnerServerSnapshot);
   const agentBusy = agentRun.status === "working" || agentRun.status === "applying";
+  // The launcher badge doubles as the agent's background status light: blue
+  // while working, green when the last run succeeded, red when it failed, and
+  // back to the plain "K" badge when idle.
+  const agentTile = agentBusy
+    ? { bg: "var(--creed-accent)", label: "Creed is working" }
+    : agentRun.status === "result"
+      ? { bg: "var(--creed-success)", label: "Creed finished" }
+      : agentRun.status === "error"
+        ? { bg: "var(--creed-danger)", label: "Creed hit an error" }
+        : null;
   // Desktop sidebar collapse (S key). Collapsed drops every lg: sidebar style
   // so desktop renders the same 48px icon rail as mobile. Persisted so the
   // choice survives reloads; read in an effect to keep SSR markup stable.
@@ -379,27 +389,37 @@ export function CreedShell({
                     size={14}
                     className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
                   />
-                  {/* Agent running in the background: a small pulsing dot on
-                      the icon. Hidden on the expanded row, where the trailing
-                      dot below takes over, so only one dot ever shows. */}
-                  {agentBusy ? (
-                    <span className={cn("absolute -right-1 -top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--creed-accent)]", !collapsed && "lg:hidden")} />
+                  {/* Agent background status: a small dot on the icon, coloured
+                      like the tile below (pulses only while working). Hidden on
+                      the expanded row, where the tile takes over. */}
+                  {agentTile ? (
+                    <span
+                      className={cn("absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full", agentBusy && "animate-pulse", !collapsed && "lg:hidden")}
+                      style={{ backgroundColor: agentTile.bg }}
+                    />
                   ) : null}
                 </span>
                 <span className={cn("hidden min-w-0 flex-1 text-left", !collapsed && "lg:inline")}>Search</span>
-                {agentBusy ? (
+                {agentTile ? (
                   // Sits exactly where the K badge would: same size and slot,
-                  // but a solid accent tile with the running mode's glyph in
-                  // white. Only the agent runs in the background, so it's the
-                  // agent icon.
+                  // but a solid status tile with a white glyph. Blue + agent
+                  // icon while working, green tick on success, red cross on
+                  // failure. Only the agent runs in the background.
                   <span
                     className={cn(
-                      "hidden h-5 w-5 items-center justify-center rounded bg-[var(--creed-accent)] text-white",
+                      "hidden h-5 w-5 items-center justify-center rounded text-white",
                       !collapsed && "lg:inline-flex"
                     )}
-                    aria-label="Creed is working"
+                    style={{ backgroundColor: agentTile.bg }}
+                    aria-label={agentTile.label}
                   >
-                    <CpuIcon size={12} className="inline-flex h-3 w-3 items-center justify-center leading-none" />
+                    {agentBusy ? (
+                      <CpuIcon size={12} className="inline-flex h-3 w-3 items-center justify-center leading-none" />
+                    ) : agentRun.status === "result" ? (
+                      <Check className="h-3 w-3" strokeWidth={2.5} />
+                    ) : (
+                      <X className="h-3 w-3" strokeWidth={2.5} />
+                    )}
                   </span>
                 ) : (
                   <kbd

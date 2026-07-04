@@ -940,11 +940,32 @@ export function CreedPanel({
     // a directly-applied section.
     const proposal = result.results.find((item) => item.kind === "proposal");
     const applied = result.results.find((item) => item.kind === "applied");
+    const sectionId =
+      proposal && proposal.kind === "proposal" ? proposal.sectionId : applied?.sectionId;
     close();
     clearAgentRun();
-    if (proposal && proposal.kind === "proposal")
-      onFileProposal(proposal.proposalId);
-    else if (applied) onFileSection(applied.sectionId);
+    // Defer to after the panel closes + the freshly filed proposal paints, then
+    // scroll the same way the working "Jump to section" button does: query the
+    // section node directly and scrollIntoView. The prop path (offsetTop-based)
+    // wasn't landing here. Fall back to it only when the node isn't on the page
+    // yet (i.e. we're not on /file), which navigates there via file intent.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = sectionId
+          ? document.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`)
+          : null;
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else if (proposal && proposal.kind === "proposal" && proposal.sectionId === "new-section") {
+          // A brand-new section has no live node to scroll to; open its card.
+          onFileProposal(proposal.proposalId);
+        } else if (sectionId) {
+          // Off /file: navigate to /file and scroll to the section - the exact
+          // path the sidebar section links use, which works cross-page.
+          onFileSection(sectionId);
+        }
+      })
+    );
   }, [agentRun.result, close, onFileProposal, onFileSection]);
 
   const backToSearch = useCallback(() => {
@@ -1084,6 +1105,13 @@ export function CreedPanel({
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0" data-state={open ? "open" : "closed"} />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            // Don't let Radix restore focus to the trigger on close - its
+            // auto-focus interrupts the smooth scroll we kick off when the user
+            // reviews an agent result or jumps to a section, so it just looks
+            // like the panel closed without moving.
+            event.preventDefault();
+          }}
           onEscapeKeyDown={(event) => {
             if (mode !== "search") {
               event.preventDefault();
