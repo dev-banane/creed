@@ -21,6 +21,7 @@ import { BookTextIcon } from "@/components/ui/book-text";
 import { ConnectIcon } from "@/components/ui/connect";
 import { ContrastIcon, type ContrastIconHandle } from "@/components/ui/contrast";
 import { CreditCardIcon } from "@/components/ui/credit-card";
+import { CpuIcon } from "@/components/ui/cpu";
 import { BillingDialog } from "@/components/creed/billing-dialog";
 import { FileTextIcon } from "@/components/ui/file-text";
 import { LinkIcon } from "@/components/ui/link";
@@ -387,7 +388,19 @@ export function CreedShell({
                 </span>
                 <span className={cn("hidden min-w-0 flex-1 text-left", !collapsed && "lg:inline")}>Search</span>
                 {agentBusy ? (
-                  <span className={cn("hidden h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--creed-accent)]", !collapsed && "lg:inline-block")} aria-label="Creed is working" />
+                  // Sits exactly where the K badge would: same size and slot,
+                  // but a solid accent tile with the running mode's glyph in
+                  // white. Only the agent runs in the background, so it's the
+                  // agent icon.
+                  <span
+                    className={cn(
+                      "hidden h-5 w-5 items-center justify-center rounded bg-[var(--creed-accent)] text-white",
+                      !collapsed && "lg:inline-flex"
+                    )}
+                    aria-label="Creed is working"
+                  >
+                    <CpuIcon size={12} className="inline-flex h-3 w-3 items-center justify-center leading-none" />
+                  </span>
                 ) : (
                   <kbd
                     className={cn(

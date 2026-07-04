@@ -17,7 +17,7 @@ import { executeAgentActions } from "@/lib/panel/agent-execute";
 import { loadCreedState } from "@/lib/creed-backend";
 import { sectionBodyMarkdown } from "@/lib/creed-data";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const auth = await requireApiAuth();
@@ -126,9 +126,9 @@ export async function POST(request: Request) {
           modelResult = await streamOpenRouter({
             apiKey: p.apiKey,
             modelId: p.modelId,
-            maxTokens: 8000,
+            maxTokens: 16000,
             temperature: 0,
-            timeoutMs: 90000,
+            timeoutMs: 240000,
             responseFormat,
             signal: request.signal,
             messages,
@@ -146,14 +146,19 @@ export async function POST(request: Request) {
             },
           });
         } catch (streamError) {
-          if (request.signal.aborted) throw streamError; // real Stop
+          // Only fall back for the "provider can't stream structured output"
+          // case, which surfaces as an empty stream (no tokens). If tokens were
+          // already flowing, a failure is a real timeout/network error - retrying
+          // the whole call would just run the clock down past maxDuration and
+          // fail again, so surface it instead.
+          if (request.signal.aborted || tokenCount > 0) throw streamError;
           send({ type: "stage", stage: "writing" });
           modelResult = await callOpenRouter({
             apiKey: p.apiKey,
             modelId: p.modelId,
-            maxTokens: 8000,
+            maxTokens: 16000,
             temperature: 0,
-            timeoutMs: 90000,
+            timeoutMs: 110000,
             responseFormat,
             messages,
           });

@@ -43,8 +43,20 @@ function extractContent(payload: OpenRouterResponse) {
 }
 
 export function parseJsonObject(value: string) {
-  const trimmed = value.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "");
-  return JSON.parse(trimmed) as unknown;
+  const trimmed = value.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch (error) {
+    // Some providers wrap the object in prose or a stray leading token despite
+    // the response_format. Salvage the outermost { ... } and parse that before
+    // giving up, so a well-formed object with a little junk around it survives.
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+    }
+    throw error;
+  }
 }
 
 export type OpenRouterCallResult = {
