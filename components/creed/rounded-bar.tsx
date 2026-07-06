@@ -10,6 +10,7 @@ export function RoundedTopBar({
   height = 0,
   fill,
   radius,
+  backgroundFill = "var(--creed-surface)",
 }: {
   x?: number;
   y?: number;
@@ -17,6 +18,7 @@ export function RoundedTopBar({
   height?: number;
   fill?: string;
   radius?: number;
+  backgroundFill?: string;
 }) {
   if (height <= 0 || width <= 0) return <g />;
   // Default (standalone) radius keeps the old behaviour: scale with width,
@@ -29,7 +31,12 @@ export function RoundedTopBar({
   // the rounded top consistent across bars.
   const bottom = y + Math.max(height, r);
   const d = `M${x},${bottom}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}H${x + width - r}A${r},${r} 0 0 1 ${x + width},${y + r}V${bottom}Z`;
-  return <path d={d} fill={fill} />;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={Math.max(height, r)} fill={backgroundFill} />
+      <path d={d} fill={fill} />
+    </g>
+  );
 }
 
 // Shape for a single segment of a stacked bar. Rounds the top only when this

@@ -22,6 +22,7 @@ export type CreedSummary = {
   type: CreedType;
   name: string;
   role: CreedRole;
+  avatarUrl?: string;
   // True for a company Creed still in onboarding (owner has not finished setup).
   // Drives the switcher's "Set up" affordance + the app gate's resume redirect.
   needsSetup: boolean;
@@ -32,6 +33,7 @@ type CreedRow = {
   type: CreedType;
   name: string;
   owner_user_id: string;
+  avatar_url?: string | null;
   onboarding_stage: string | null;
 };
 
@@ -63,12 +65,26 @@ export async function listUserCreeds(
   const roleByCreed = new Map(memberRows.map((row) => [row.creed_id, row.role]));
   const ids = [...roleByCreed.keys()];
 
-  const { data: creedRows, error: creedError } = (await db
+  let creedRows: CreedRow[] | null = null;
+  const withAvatar = (await db
     .from("creeds")
-    .select("id, type, name, owner_user_id, onboarding_stage")
+    .select("id, type, name, owner_user_id, avatar_url, onboarding_stage")
     .in("id", ids)) as { data: CreedRow[] | null; error: unknown };
 
-  if (creedError || !creedRows) {
+  if (withAvatar.error) {
+    const fallback = (await db
+      .from("creeds")
+      .select("id, type, name, owner_user_id, onboarding_stage")
+      .in("id", ids)) as { data: CreedRow[] | null; error: unknown };
+    if (fallback.error || !fallback.data) {
+      return [];
+    }
+    creedRows = fallback.data;
+  } else {
+    creedRows = withAvatar.data;
+  }
+
+  if (!creedRows) {
     return [];
   }
 
@@ -78,6 +94,7 @@ export async function listUserCreeds(
       type: row.type,
       name: row.name,
       role: roleByCreed.get(row.id) ?? "member",
+      avatarUrl: row.avatar_url ?? undefined,
       needsSetup: row.type === "company" && row.onboarding_stage != null,
     }))
     .sort((a, b) => {

@@ -4,7 +4,11 @@ import { AuthorizeSpacePicker, type SpaceOption } from "@/components/creed/autho
 import { Button } from "@/components/ui/button";
 import { getAgentIconKind } from "@/lib/agent-icon";
 import { getOAuthClient, isAllowedRedirectUri } from "@/lib/oauth";
-import { getUserName } from "@/lib/creed-backend";
+import {
+  getAvatarInitials,
+  getAvatarUrl,
+  getUserName,
+} from "@/lib/creed-backend";
 import { listUserCreeds } from "@/lib/creed-membership";
 import { hasActiveEntitlement } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -190,6 +194,10 @@ export default async function AuthorizePage({
     id: creed.id,
     label: creed.type === "personal" ? getUserName(user) : creed.name,
     type: creed.type,
+    avatarInitials: getAvatarInitials(
+      creed.type === "personal" ? getUserName(user) : creed.name,
+    ),
+    avatarUrl: creed.type === "personal" ? getAvatarUrl(user) : creed.avatarUrl,
   }));
   const showPicker = spaces.length > 1;
 

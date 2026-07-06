@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ProfileAvatar } from "@/components/creed/profile-avatar";
 
 // The spaces a connecting agent can be granted, shown on the OAuth consent
 // screen. One connection reaches exactly one Creed - personal OR a single
@@ -15,7 +16,13 @@ import {
 // second Creed the user connects the agent again and picks that one. Keeping it
 // to one space removes any per-call ambiguity: the agent always acts on the
 // Creed it was connected to.
-export type SpaceOption = { id: string; label: string; type: "personal" | "company" };
+export type SpaceOption = {
+  id: string;
+  label: string;
+  type: "personal" | "company";
+  avatarInitials: string;
+  avatarUrl?: string;
+};
 
 export function AuthorizeSpacePicker({ spaces }: { spaces: SpaceOption[] }) {
   // Default to the personal Creed (or the first space if there is none), so the
@@ -38,7 +45,20 @@ export function AuthorizeSpacePicker({ spaces }: { spaces: SpaceOption[] }) {
             type="button"
             className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[13px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] aria-expanded:bg-[var(--creed-surface-raised)]"
           >
-            <span className="truncate">{selected?.label ?? "Select a Creed"}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              {selected ? (
+                <ProfileAvatar
+                  kind={selected.type === "company" ? "company" : "person"}
+                  name={selected.label}
+                  initials={selected.avatarInitials}
+                  avatarUrl={selected.avatarUrl}
+                  size="sm"
+                />
+              ) : null}
+              <span className="truncate">
+                {selected?.label ?? "Select a Creed"}
+              </span>
+            </span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)]" strokeWidth={2} />
           </button>
         </DropdownMenuTrigger>
@@ -54,7 +74,16 @@ export function AuthorizeSpacePicker({ spaces }: { spaces: SpaceOption[] }) {
                 onSelect={() => setSelectedId(space.id)}
                 className="flex items-center justify-between gap-3 text-[13px]"
               >
-                <span className="min-w-0 truncate text-[var(--creed-text-primary)]">{space.label}</span>
+                <span className="flex min-w-0 items-center gap-2 text-[var(--creed-text-primary)]">
+                  <ProfileAvatar
+                    kind={space.type === "company" ? "company" : "person"}
+                    name={space.label}
+                    initials={space.avatarInitials}
+                    avatarUrl={space.avatarUrl}
+                    size="sm"
+                  />
+                  <span className="truncate">{space.label}</span>
+                </span>
                 {isSelected ? (
                   <Check
                     className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-secondary)]"

@@ -4,8 +4,6 @@ import { ChevronDown } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RefreshCwIcon } from "@/components/ui/refresh-cw";
-import { useAnimatedIconControls } from "@/components/creed/animated-icon-controls";
 import { cn } from "@/lib/utils";
 
 function useIsMobile() {
@@ -155,11 +153,13 @@ export function QualityRing({
   score,
   color,
   loading,
+  actionable = false,
   size = 18,
 }: {
   score?: number;
   color: string;
   loading?: boolean;
+  actionable?: boolean;
   size?: number;
 }) {
   const stroke = 3;
@@ -202,7 +202,16 @@ export function QualityRing({
 
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
-      <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full -rotate-90">
+      <motion.svg
+        viewBox={`0 0 ${size} ${size}`}
+        className="h-full w-full -rotate-90"
+        animate={loading ? { rotate: 270 } : { rotate: -90 }}
+        transition={
+          loading
+            ? { repeat: Infinity, ease: "linear", duration: 0.85 }
+            : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+        }
+      >
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -211,7 +220,7 @@ export function QualityRing({
           stroke="var(--creed-ring-track)"
           strokeWidth={stroke}
         />
-        <circle
+        <motion.circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
@@ -220,54 +229,25 @@ export function QualityRing({
           strokeLinecap="round"
           strokeWidth={stroke}
           strokeDasharray={circumference}
-          strokeDashoffset={offset}
+          strokeDashoffset={loading ? circumference * 0.72 : offset}
           style={{ transition: "stroke-dashoffset 680ms cubic-bezier(0.22, 1, 0.36, 1)" }}
         />
-      </svg>
+      </motion.svg>
+      <AnimatePresence initial={false}>
+        {actionable && !loading ? (
+          <motion.span
+            key="quality-ring-action-dot"
+            aria-hidden="true"
+            initial={{ opacity: 0, scale: 0.45 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.45 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+        ) : null}
+      </AnimatePresence>
     </span>
-  );
-}
-
-export function QualityRefreshButton({
-  onClick,
-  loading,
-  title,
-}: {
-  onClick: () => void;
-  loading?: boolean;
-  title: string;
-}) {
-  const refreshIcon = useAnimatedIconControls(80);
-
-  return (
-    <button
-      type="button"
-      aria-label={title}
-      onClick={onClick}
-      disabled={loading}
-      onMouseEnter={() => refreshIcon.start()}
-      onMouseLeave={() => refreshIcon.settle()}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)] disabled:opacity-60"
-    >
-      {/* While loading, keep the icon spinning continuously from wherever it
-          was; once loading flips off, the wrapper smoothly settles back to
-          rotation 0 instead of snapping. */}
-      <motion.span
-        className="inline-flex h-4 w-4 items-center justify-center"
-        animate={loading ? { rotate: 360 } : { rotate: 0 }}
-        transition={
-          loading
-            ? { repeat: Infinity, ease: "linear", duration: 0.9 }
-            : { duration: 0.5, ease: [0.22, 1, 0.36, 1] }
-        }
-      >
-        <RefreshCwIcon
-          ref={refreshIcon.iconRef}
-          className="h-4 w-4"
-          size={16}
-        />
-      </motion.span>
-    </button>
   );
 }
 
@@ -386,37 +366,43 @@ export function SectionQualityPopover({
   color,
   loading,
   sectionName,
+  actionAvailable = false,
+  onAction,
 }: {
   quality?: CreedQualityReport["sections"][number];
   color: string;
   loading?: boolean;
   sectionName?: string;
+  actionAvailable?: boolean;
+  onAction?: () => void;
 }) {
   const isMobile = useIsMobile();
   const { open, setOpen, cancelClose, scheduleClose } = useHoverPopover();
 
-  if (!quality) {
-    return (
-      <span
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full"
-        aria-label="No section analysis"
-      >
-        <QualityRing score={0} color={color} loading={loading} size={17} />
-      </span>
-    );
+  function handleTriggerClick(event: React.MouseEvent<HTMLButtonElement>) {
+    if (!actionAvailable || loading || !onAction) {
+      return;
+    }
+    if (isMobile && !open) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onAction();
   }
 
   // Prefer the new structured note; if the model is still on the old shape,
   // synthesize a plausible title/detail from the legacy arrays so the UI
   // never collapses to nothing.
   const strength: QualityNote | null =
-    quality.strength ??
-    (quality.strengths?.[0]
+    quality?.strength ??
+    (quality?.strengths?.[0]
       ? { title: "Worth keeping", detail: quality.strengths[0] }
       : null);
   const gap: QualityNote | null =
-    quality.gap ??
-    (quality.gaps?.[0]
+    quality?.gap ??
+    (quality?.gaps?.[0]
       ? { title: "Needs work", detail: quality.gaps[0] }
       : null);
 
@@ -425,6 +411,7 @@ export function SectionQualityPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
+          onClick={handleTriggerClick}
           onMouseEnter={
             isMobile
               ? undefined
@@ -435,9 +422,15 @@ export function SectionQualityPopover({
           }
           onMouseLeave={isMobile ? undefined : scheduleClose}
           className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-150 hover:bg-[var(--creed-surface-raised)]"
-          aria-label="Section score"
+          aria-label={actionAvailable ? "Run section analysis" : "Section score"}
         >
-          <QualityRing score={quality.score} color={color} loading={loading} size={17} />
+          <QualityRing
+            score={quality?.score ?? 0}
+            color={color}
+            loading={loading}
+            actionable={actionAvailable}
+            size={17}
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -448,15 +441,23 @@ export function SectionQualityPopover({
         onCloseAutoFocus={(event) => event.preventDefault()}
         className="relative w-64 rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-3 shadow-[0_8px_24px_rgba(28,28,26,0.10)] before:pointer-events-auto before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-['']"
       >
-        <QualityCompactCard
-          score={quality.score}
-          label={sectionName ?? quality.sectionName ?? "Section"}
-          labelColor={color}
-          tags={quality.tags}
-          strength={strength}
-          gap={gap}
-          loading={loading}
-        />
+        {quality ? (
+          <QualityCompactCard
+            score={quality.score}
+            label={sectionName ?? quality.sectionName ?? "Section"}
+            labelColor={color}
+            tags={quality.tags}
+            strength={strength}
+            gap={gap}
+            loading={loading}
+          />
+        ) : (
+          <div className="text-[15px] font-medium leading-none text-[var(--creed-text-secondary)] md:text-[16px]">
+            {loading
+              ? "Analyzing this section for agent context..."
+              : "No section analysis yet."}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -467,18 +468,37 @@ export function OverallQualityPopover({
   loading,
   children,
   align = "end",
+  actionAvailable = false,
+  onAction,
 }: {
   report: CreedQualityReport | null;
   loading?: boolean;
   children: React.ReactNode;
   align?: "start" | "center" | "end";
+  actionAvailable?: boolean;
+  onAction?: () => void;
 }) {
   const isMobile = useIsMobile();
   const { open, setOpen, cancelClose, scheduleClose } = useHoverPopover();
+
+  function handleTriggerClick(event: React.MouseEvent<HTMLSpanElement>) {
+    if (!actionAvailable || loading || !onAction) {
+      return;
+    }
+    if (isMobile && !open) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onAction();
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <span
+          onClick={handleTriggerClick}
           onMouseEnter={
             isMobile
               ? undefined

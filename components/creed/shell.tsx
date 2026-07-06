@@ -51,6 +51,7 @@ import { SearchIcon, type SearchIconHandle } from "@/components/ui/search";
 import { useCreed } from "@/components/creed/creed-provider";
 import { preloadSettingsData } from "@/components/creed/settings-preload";
 import { preloadMcpHealth } from "@/components/creed/mcp-health-preload";
+import { ShortcutKey } from "@/components/creed/shortcut-key";
 
 const FILE_NAV_INTENT_KEY = "creed:file-nav-intent";
 const SIDEBAR_COLLAPSED_KEY = "creed:sidebar-collapsed";
@@ -369,16 +370,26 @@ export function CreedShell({
               aria-label="Creed home"
               className={cn(
                 "mx-auto flex h-8 w-8 items-center justify-center rounded-[10px] transition-opacity duration-200 hover:opacity-60",
-                !collapsed && "lg:mx-0 lg:h-auto lg:w-auto lg:justify-start lg:px-2 lg:py-1.5"
+                !collapsed && "lg:hidden"
               )}
             >
-              <span className={cn(!collapsed && "lg:hidden")}>
-                <CreedMark />
-              </span>
-              <span className={cn("hidden", !collapsed && "lg:block")}>
-                <CreedWordmark className="ml-0" />
-              </span>
+              <CreedMark />
             </Link>
+
+            <div className={cn("hidden", !collapsed && "lg:flex lg:items-center lg:justify-between lg:gap-3 lg:pr-2")}>
+              <Link
+                href="/home"
+                aria-label="Creed home"
+                className="flex min-w-0 items-center rounded-[10px] px-2 py-1.5 transition-opacity duration-200 hover:opacity-60"
+              >
+                <CreedWordmark className="ml-0" />
+              </Link>
+              <ShortcutKey className="hidden lg:inline-flex">S</ShortcutKey>
+            </div>
+
+            <div className={cn("hidden justify-center pt-4", collapsed && "lg:flex")}>
+              <ShortcutKey>S</ShortcutKey>
+            </div>
 
             <nav className={cn("mt-5 space-y-1", !collapsed && "lg:mt-8")}>
               <button
@@ -431,14 +442,14 @@ export function CreedShell({
                     )}
                   </span>
                 ) : (
-                  <kbd
+                  <ShortcutKey
                     className={cn(
-                      "hidden h-5 w-5 items-center justify-center rounded border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] text-[10px] font-medium text-[var(--creed-text-secondary)]",
+                      "hidden",
                       !collapsed && "lg:inline-flex"
                     )}
                   >
                     K
-                  </kbd>
+                  </ShortcutKey>
                 )}
               </button>
               {navItems.map((item) => {

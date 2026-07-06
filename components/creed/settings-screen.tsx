@@ -99,6 +99,7 @@ import {
 } from "@/lib/creed-data";
 import { cn } from "@/lib/utils";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
+import { EditableProfileAvatar } from "@/components/creed/profile-avatar";
 
 function looksLikeApiKey(value: string) {
   const trimmed = value.trim();
@@ -148,12 +149,14 @@ function PersonalSettingsScreen() {
     exportActivityJson,
     exportAllDataJson,
     refreshState,
+    setProfileAvatar,
     deleteAccount,
     restoreSection,
     deleteSection,
   } = useCreed();
   const [nameDraft, setNameDraft] = useState(state.user.name);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [archivedDeleteTarget, setArchivedDeleteTarget] = useState<{
     id: string;
     name: string;
@@ -239,6 +242,34 @@ function PersonalSettingsScreen() {
     } else {
       setNameDraft(state.user.name);
       toast.error("Could not update name.");
+    }
+  }
+
+  async function uploadPersonalAvatar(file: File) {
+    setAvatarUploading(true);
+    try {
+      const form = new FormData();
+      form.set("scope", "personal");
+      form.set("file", file);
+      const response = await fetch("/api/app/profile/avatar", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        avatarUrl?: string;
+      };
+      if (!response.ok) {
+        toast.error(data.error ?? "Could not save profile picture.");
+        return;
+      }
+      if (data.avatarUrl) {
+        setProfileAvatar(data.avatarUrl, "personal");
+      }
+      void refreshState();
+      toast.success("Profile picture saved.");
+    } finally {
+      setAvatarUploading(false);
     }
   }
 
@@ -803,27 +834,37 @@ function PersonalSettingsScreen() {
               Profile
             </h2>
             <div className="mt-4 rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface)] p-5">
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <label className="mb-2 block text-[14px] font-medium text-[var(--creed-text-secondary)]">
-                    Name
-                  </label>
-                  <Input
-                    value={nameDraft}
-                    onChange={(event) => setNameDraft(event.target.value)}
-                    onBlur={() => void saveDisplayName()}
-                    className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px]"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-[14px] font-medium text-[var(--creed-text-secondary)]">
-                    Email
-                  </label>
-                  <Input
-                    value={state.user.email}
-                    readOnly
-                    className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px] text-[var(--creed-text-secondary)]"
-                  />
+              <div className="grid grid-cols-[calc(1.25rem+0.5rem+2.75rem)_minmax(0,1fr)] items-start gap-x-4 gap-y-4 md:flex md:gap-5">
+                <EditableProfileAvatar
+                  kind="person"
+                  name={state.user.name}
+                  initials={state.user.avatarInitials}
+                  avatarUrl={state.user.avatarUrl}
+                  uploading={avatarUploading}
+                  onFile={(file) => void uploadPersonalAvatar(file)}
+                />
+                <div className="contents md:block md:min-w-0 md:flex-1 md:space-y-3">
+                  <div className="min-w-0">
+                    <label className="mb-2 block text-[14px] font-medium leading-5 text-[var(--creed-text-secondary)]">
+                      Name
+                    </label>
+                    <Input
+                      value={nameDraft}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      onBlur={() => void saveDisplayName()}
+                      className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px]"
+                    />
+                  </div>
+                  <div className="col-span-2 min-w-0 md:col-span-1">
+                    <label className="mb-2 block text-[14px] font-medium leading-5 text-[var(--creed-text-secondary)]">
+                      Email
+                    </label>
+                    <Input
+                      value={state.user.email}
+                      readOnly
+                      className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px] text-[var(--creed-text-secondary)]"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1253,15 +1294,15 @@ function PersonalSettingsScreen() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px] text-[var(--creed-text-secondary)]">
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--creed-surface-raised)] px-2 py-1 font-mono text-[var(--creed-text-primary)]">
-                    creed.md
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-[var(--creed-text-secondary)]">
+                  <span className="font-medium text-[var(--creed-text-secondary)]">
+                    Last commit
+                  </span>
+                  <span aria-hidden className="shrink-0 text-[var(--creed-text-tertiary)]">
+                    ·
                   </span>
                   {versionStatus?.remoteMessage ? (
                     <span className="inline-flex min-w-0 items-center gap-2">
-                      <span aria-hidden className="shrink-0 text-[var(--creed-text-tertiary)]">
-                        ·
-                      </span>
                       {latestCommitUrl ? (
                         <a
                           href={latestCommitUrl}
@@ -1278,7 +1319,11 @@ function PersonalSettingsScreen() {
                         </span>
                       )}
                     </span>
-                  ) : null}
+                  ) : (
+                    <span className="text-[var(--creed-text-tertiary)]">
+                      no commits yet
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1386,16 +1431,27 @@ function PersonalSettingsScreen() {
               Data
             </h2>
             <div className="mt-4 rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface)] p-5">
-              <p className="text-[14px] leading-7 text-[var(--creed-text-secondary)]">
-                <span className="inline-flex items-center rounded-md bg-[var(--creed-surface-raised)] px-2 py-0.5 align-middle font-mono text-[13px] text-[var(--creed-text-primary)]">
-                  {dataStats.wordCount.toLocaleString()}
-                </span>{" "}
-                {dataStats.wordCount === 1 ? "word" : "words"} across{" "}
-                <span className="inline-flex items-center rounded-md bg-[var(--creed-surface-raised)] px-2 py-0.5 align-middle font-mono text-[13px] text-[var(--creed-text-primary)]">
-                  {dataStats.sectionCount.toLocaleString()}
-                </span>{" "}
-                {dataStats.sectionCount === 1 ? "section" : "sections"}.
-              </p>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[14px]">
+                <span>
+                  <span className="font-medium text-[var(--creed-text-primary)]">
+                    {dataStats.wordCount.toLocaleString()}
+                  </span>
+                  <span className="ml-1 text-[var(--creed-text-secondary)]">
+                    {dataStats.wordCount === 1 ? "word" : "words"}
+                  </span>
+                </span>
+                <span aria-hidden className="text-[var(--creed-text-tertiary)]">
+                  ·
+                </span>
+                <span>
+                  <span className="font-medium text-[var(--creed-text-primary)]">
+                    {dataStats.sectionCount.toLocaleString()}
+                  </span>
+                  <span className="ml-1 text-[var(--creed-text-secondary)]">
+                    {dataStats.sectionCount === 1 ? "section" : "sections"}
+                  </span>
+                </span>
+              </div>
               <div className="mt-4 flex flex-wrap gap-3">
                 <AnimatedIconButton
                   icon={DownloadIcon}

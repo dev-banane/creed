@@ -75,7 +75,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentIconStack } from "@/components/creed/agent-icon-stack";
 import {
   OverallQualityPopover,
-  QualityRefreshButton,
   QualityRing,
   SectionQualityPopover,
   type CreedQualityReport,
@@ -105,6 +104,7 @@ import {
   useCreedShellFileActions,
   useCreedShellActiveSection,
 } from "@/components/creed/shell";
+import { ShortcutKey } from "@/components/creed/shortcut-key";
 import { useCreed } from "@/components/creed/creed-provider";
 import { CreedSwitcher } from "@/components/creed/creed-switcher";
 import { parseCreedMarkdown } from "@/lib/creed-markdown";
@@ -1994,40 +1994,26 @@ export function FileScreen() {
 
                   <div className="flex items-center gap-2 self-start">
                     <div className="inline-flex h-7 items-center gap-1">
-                      <AnimatePresence initial={false}>
-                        {canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis) ? (
-                          <motion.div
-                            key="refresh-full-quality"
-                            initial={{ opacity: 0, scale: 0.88, width: 0 }}
-                            animate={{ opacity: 1, scale: 1, width: 28 }}
-                            exit={{ opacity: 0, scale: 0.88, width: 0 }}
-                            transition={{
-                              duration: 0.18,
-                              ease: [0.22, 1, 0.36, 1],
-                            }}
-                            className="overflow-hidden"
-                          >
-                            <QualityRefreshButton
-                              title="Refresh full analysis"
-                              loading={qualityLoading}
-                              onClick={() => void refreshFullQuality()}
-                            />
-                          </motion.div>
-                        ) : null}
-                      </AnimatePresence>
                       <OverallQualityPopover
                         report={qualityReport}
                         loading={qualityLoading}
+                        actionAvailable={canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)}
+                        onAction={() => void refreshFullQuality()}
                       >
                         <button
                           type="button"
                           className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] data-[state=open]:bg-[var(--creed-surface-raised)]"
-                          aria-label="Show Creed quality"
+                          aria-label={
+                            canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)
+                              ? "Run Creed quality analysis"
+                              : "Show Creed quality"
+                          }
                         >
                           <QualityRing
                             score={qualityReport?.overall.score ?? 0}
                             color="#2563EB"
                             loading={qualityLoading}
+                            actionable={canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)}
                           />
                         </button>
                       </OverallQualityPopover>
@@ -2489,8 +2475,8 @@ export function FileScreen() {
                         canSeeQuality &&
                         // Members can only refresh sections they have propose or direct access to.
                         (state.creedType !== "company" || canProposeToSection(myPerm)) &&
-                        Boolean(quality) &&
-                        (!analyzedFingerprint ||
+                        (!quality ||
+                          !analyzedFingerprint ||
                           analyzedFingerprint !== currentFingerprint)
                       }
                       onRefreshQuality={() =>
@@ -3047,6 +3033,7 @@ function SectionCard({
   // changes so a draft never leaks across sections.
   const [proposalDraft, setProposalDraft] = useState<string | null>(null);
   const [submittingProposal, setSubmittingProposal] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     setProposalDraft(null);
   }, [section.id]);
@@ -3114,7 +3101,7 @@ function SectionCard({
                 className="inline-block h-9 w-[3px] rounded-full"
                 style={{ backgroundColor: accent }}
               />
-              <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                 <span
                   className="text-[15px] font-medium leading-none md:text-[16px]"
                   style={{ color: accent }}
@@ -3125,60 +3112,34 @@ function SectionCard({
                   quality={quality}
                   color={accent}
                   loading={qualityLoading}
+                  sectionName={section.name}
+                  actionAvailable={Boolean(qualityDirty)}
+                  onAction={onRefreshQuality}
                 />
-                <AnimatePresence initial={false}>
-                  {qualityDirty ? (
-                    <motion.div
-                      key={`${section.id}-quality-refresh`}
-                      initial={{ opacity: 0, scale: 0.88, width: 0 }}
-                      animate={{ opacity: 1, scale: 1, width: 28 }}
-                      exit={{ opacity: 0, scale: 0.88, width: 0 }}
-                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <QualityRefreshButton
-                        title={`Refresh ${section.name} score`}
-                        loading={qualityLoading}
-                        onClick={onRefreshQuality}
-                      />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-                {/* Per-section lock controls only exist while the master
-                    lock is on - the header is the authority. Smoothly
-                    expand/collapse so the chrome doesn't jump when the user
-                    toggles the master. */}
-                <AnimatePresence initial={false}>
-                  {globalLocked ? (
-                    <motion.div
-                      key={`${section.id}-section-lock`}
-                      initial={{ opacity: 0, scale: 0.88, width: 0 }}
-                      animate={{ opacity: 1, scale: 1, width: 28 }}
-                      exit={{ opacity: 0, scale: 0.88, width: 0 }}
-                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <SectionLockButton
-                        locked={locked}
-                        title={
-                          locked
-                            ? `Unlock ${section.name}`
-                            : `Lock ${section.name}`
-                        }
-                        onToggle={onToggleLock}
-                      />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
+                <button
+                  type="button"
+                  aria-label={
+                    collapsed
+                      ? `Expand ${section.name}`
+                      : `Collapse ${section.name}`
+                  }
+                  aria-expanded={!collapsed}
+                  onClick={() => setCollapsed((value) => !value)}
+                  className="-ml-2 inline-flex h-9 w-10 shrink-0 items-center justify-center pl-2 text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)]"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      collapsed ? "-rotate-90" : "rotate-0",
+                    )}
+                  />
+                </button>
               </div>
             </div>
           </div>
 
-          {readOnlyMember ? null : (
-            <div className="flex shrink-0 items-center gap-0.5">
-              {/* Proposal-only: submit the buffered manual edit as a proposal.
-                Identical ghost icon-sm button to the kebab beside it, just with
-                a blue send glyph. Appears only once there are unsent changes. */}
+          <div className="flex shrink-0 items-center gap-0.5">
+            {readOnlyMember ? null : (
               <AnimatePresence initial={false}>
                 {proposeMode && proposalDirty ? (
                   <motion.div
@@ -3207,7 +3168,30 @@ function SectionCard({
                   </motion.div>
                 ) : null}
               </AnimatePresence>
+            )}
 
+            <AnimatePresence initial={false}>
+              {globalLocked ? (
+                <motion.div
+                  key={`${section.id}-section-lock`}
+                  initial={{ opacity: 0, scale: 0.88, width: 0 }}
+                  animate={{ opacity: 1, scale: 1, width: 28 }}
+                  exit={{ opacity: 0, scale: 0.88, width: 0 }}
+                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="overflow-hidden"
+                >
+                  <SectionLockButton
+                    locked={locked}
+                    title={
+                      locked ? `Unlock ${section.name}` : `Lock ${section.name}`
+                    }
+                    onToggle={onToggleLock}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            {readOnlyMember ? null : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -3338,80 +3322,101 @@ function SectionCard({
                   </AnimatedMenuIconItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-          )}
-        </div>
-
-        {proposals.length > 0 ? (
-          <div className="mb-4 space-y-3">
-            {proposals.map((p) => {
-              const kind = p.draft.kind;
-              if (
-                kind === "delete-section" ||
-                kind === "rename-section" ||
-                kind === "recolor-section"
-              ) {
-                return (
-                  <InlineMetaProposal
-                    key={p.id}
-                    proposal={p}
-                    existingName={section.name}
-                    existingAccent={accentColorMap[section.accent]}
-                    agentName={p.agentName}
-                    canReview={canReview}
-                    onAccept={() => onAcceptProposal(p.id)}
-                    onReject={() => onRejectProposal(p.id)}
-                  />
-                );
-              }
-              return (
-                <InlineProposalDiff
-                  key={p.id}
-                  proposal={p}
-                  existingContent={section.content}
-                  agentName={p.agentName}
-                  canReview={canReview}
-                  mine={Boolean(p.mine)}
-                  onAccept={() => onAcceptProposal(p.id)}
-                  onReject={() => onRejectProposal(p.id)}
-                  onEdit={() => editProposal(p)}
-                  onDelete={() => onWithdrawProposal(p.id)}
-                />
-              );
-            })}
+            )}
           </div>
-        ) : null}
-
-        <div
-          // Read-only for this member: nothing is greyed, but a click on the
-          // body (as if to edit) surfaces an amber "read-only" nudge. Text
-          // selection still works, so we skip the toast mid-selection.
-          onClick={
-            readOnlyMember
-              ? () => {
-                  if ((window.getSelection()?.toString() ?? "") === "") {
-                    toast.warning("This section is read-only.");
-                  }
-                }
-              : undefined
-          }
-        >
-          <RichTextEditor
-            sectionId={section.id}
-            content={
-              proposeMode ? (proposalDraft ?? section.content) : section.content
-            }
-            readOnly={locked}
-            accentColor={accentColorMap[section.accent]}
-            onChange={
-              proposeMode
-                ? (html) =>
-                    setProposalDraft(html === section.content ? null : html)
-                : onChangeRichText
-            }
-            onAddSectionAfter={onAddSectionAfter}
-          />
         </div>
+
+        <AnimatePresence initial={false}>
+          {collapsed ? null : (
+            <motion.div
+              key={`${section.id}-body`}
+              initial={{ height: 0, opacity: 0, y: -4 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -4 }}
+              transition={{
+                height: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                opacity: { duration: 0.18, ease: [0.22, 1, 0.36, 1] },
+                y: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+              }}
+              className="overflow-hidden"
+            >
+              {proposals.length > 0 ? (
+                <div className="mb-4 space-y-3">
+                  {proposals.map((p) => {
+                    const kind = p.draft.kind;
+                    if (
+                      kind === "delete-section" ||
+                      kind === "rename-section" ||
+                      kind === "recolor-section"
+                    ) {
+                      return (
+                        <InlineMetaProposal
+                          key={p.id}
+                          proposal={p}
+                          existingName={section.name}
+                          existingAccent={accentColorMap[section.accent]}
+                          agentName={p.agentName}
+                          canReview={canReview}
+                          onAccept={() => onAcceptProposal(p.id)}
+                          onReject={() => onRejectProposal(p.id)}
+                        />
+                      );
+                    }
+                    return (
+                      <InlineProposalDiff
+                        key={p.id}
+                        proposal={p}
+                        existingContent={section.content}
+                        agentName={p.agentName}
+                        canReview={canReview}
+                        mine={Boolean(p.mine)}
+                        onAccept={() => onAcceptProposal(p.id)}
+                        onReject={() => onRejectProposal(p.id)}
+                        onEdit={() => editProposal(p)}
+                        onDelete={() => onWithdrawProposal(p.id)}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div
+                // Read-only for this member: nothing is greyed, but a click on the
+                // body (as if to edit) surfaces an amber "read-only" nudge. Text
+                // selection still works, so we skip the toast mid-selection.
+                onClick={
+                  readOnlyMember
+                    ? () => {
+                        if ((window.getSelection()?.toString() ?? "") === "") {
+                          toast.warning("This section is read-only.");
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <RichTextEditor
+                  sectionId={section.id}
+                  content={
+                    proposeMode
+                      ? (proposalDraft ?? section.content)
+                      : section.content
+                  }
+                  readOnly={locked}
+                  accentColor={accentColorMap[section.accent]}
+                  onChange={
+                    proposeMode
+                      ? (html) =>
+                          setProposalDraft(
+                            html === section.content ? null : html,
+                          )
+                      : onChangeRichText
+                  }
+                  onAddSectionAfter={onAddSectionAfter}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
     </Reorder.Item>
   );
@@ -3420,7 +3425,7 @@ function SectionCard({
 // Animated Lock / LockOpen button shared by the header (master) and per-section.
 // The lucide-animated icons fire `startAnimation()` on demand - the button
 // triggers the animation on click, *not* hover, so the user sees the latch
-// move in response to the new state. Same chrome as `QualityRefreshButton`.
+// move in response to the new state.
 function AnimatedLockButton({
   locked,
   title,
@@ -3731,8 +3736,11 @@ function ActivityRail({
       <div className="flex h-full w-full flex-col p-5 lg:w-[356px]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[15px] font-medium text-[var(--creed-text-primary)]">
-              Activity
+            <div className="flex items-center gap-2.5">
+              <div className="text-[15px] font-medium text-[var(--creed-text-primary)]">
+                Activity
+              </div>
+              <ShortcutKey className="hidden md:inline-flex">A</ShortcutKey>
             </div>
             <div className="mt-1 text-[12px] text-[var(--creed-text-tertiary)]">
               {creedType === "company"

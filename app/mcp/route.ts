@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
-import type { AccentKey, AgentPermission, CreedSection, CreedState, GovernedSectionId } from "@/lib/creed-data";
+import type {
+  AccentKey,
+  AgentPermission,
+  CreedSection,
+  CreedState,
+  CreedSwitcherItem,
+  GovernedSectionId,
+} from "@/lib/creed-data";
 import {
   buildAgentReadPayload,
   buildVisibleCreedMarkdown,
@@ -11,6 +18,7 @@ import {
   loadCompanyCreedState,
   recordMcpClientUsage,
   createBlankCreedState,
+  getAvatarInitials,
 } from "@/lib/creed-backend";
 import { companyMcpWrite, type CompanyMcpOp } from "@/lib/company-sections";
 import { minPermission, resolveSectionPermission } from "@/lib/creed-permissions";
@@ -722,6 +730,11 @@ async function resolveMcpState(
   // If the grants point only at Creeds the user has since left (or there are no
   // grants at all), fall back to the token owner's own personal Creed.
   if (creeds.length === 0 && personal) creeds = [personal];
+  const switcherCreeds: CreedSwitcherItem[] = creeds.map((creed) => ({
+    ...creed,
+    avatarInitials: getAvatarInitials(creed.name),
+    avatarUrl: creed.avatarUrl,
+  }));
 
   // The Creed named on the first tool call that carries a `creed` arg.
   let requested: string | null = null;
@@ -751,7 +764,7 @@ async function resolveMcpState(
   // nothing and every write tool fails auth (empty tokens), so it never exposes
   // a Creed the token was not granted.
   const emptyState = (): { state: CreedState; creeds: typeof creeds } => ({
-    state: { ...createBlankCreedState(user as never), creeds },
+    state: { ...createBlankCreedState(user as never), creeds: switcherCreeds },
     creeds,
   });
 
@@ -762,7 +775,7 @@ async function resolveMcpState(
         user as never,
         target.id,
         role,
-        creeds
+        switcherCreeds,
       );
       // The agent's reach on each section is the lower of two ceilings: what the
       // owner/admin allow the member (creed_member_section_permissions, resolved
@@ -813,7 +826,15 @@ async function resolveMcpState(
     proposalLimit: 100,
     activityLimit: 100,
   });
-  return { state: { ...state, creeds, creedType: "personal", creedId: personal?.id }, creeds };
+  return {
+    state: {
+      ...state,
+      creeds: switcherCreeds,
+      creedType: "personal",
+      creedId: personal?.id,
+    },
+    creeds,
+  };
 }
 
 async function handleToolCall(

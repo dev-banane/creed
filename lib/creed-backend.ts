@@ -43,6 +43,7 @@ import { isGitHubOAuthAppConfigured } from "@/lib/github";
 import { readCompanyGitHubIntegration } from "@/lib/company-github";
 import { log } from "@/lib/observability";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
+import type { CreedSummary } from "@/lib/creed-membership";
 import { getPersonalCreedId } from "@/lib/creed-membership";
 
 type SectionRow = {
@@ -560,6 +561,23 @@ export function getAvatarInitials(name: string) {
   }
 
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+}
+
+function enrichCreedSwitcherItems(
+  creeds: CreedSummary[],
+  user: User,
+): CreedSwitcherItem[] {
+  const userName = getUserName(user);
+  const userAvatarUrl = getAvatarUrl(user);
+
+  return creeds.map((creed) => {
+    const label = creed.type === "personal" ? userName : creed.name;
+    return {
+      ...creed,
+      avatarInitials: getAvatarInitials(label),
+      avatarUrl: creed.type === "personal" ? userAvatarUrl : creed.avatarUrl,
+    };
+  });
 }
 
 function generateToken(prefix: "xt_read" | "xt_proposal" | "xt_direct") {
@@ -1391,19 +1409,25 @@ export async function loadActiveCreedState(
   active: {
     creedId: string;
     role: CreedRole;
-    creeds: CreedSwitcherItem[];
+    creeds: CreedSummary[];
   } | null,
 ): Promise<PersistResult> {
-  const creeds: CreedSwitcherItem[] = active?.creeds ?? [];
+  const resolvedUser = await enrichUserForState(user);
+  const creeds = enrichCreedSwitcherItems(active?.creeds ?? [], resolvedUser);
   const activeEntry = active
     ? (creeds.find((c) => c.id === active.creedId) ?? null)
     : null;
 
   if (active && activeEntry && activeEntry.type === "company") {
-    return loadCompanyCreedState(user, active.creedId, active.role, creeds);
+    return loadCompanyCreedState(
+      resolvedUser,
+      active.creedId,
+      active.role,
+      creeds,
+    );
   }
 
-  const result = await loadCreedState(client, user);
+  const result = await loadCreedState(client, resolvedUser);
   const personalId = creeds.find((c) => c.type === "personal")?.id;
   return {
     ...result,
@@ -1438,8 +1462,26 @@ export async function loadCompanyCreedState(
   };
   const resolvedUser = await enrichUserForState(user);
 
+  const creedWithAvatar = (await admin
+    .from("creeds")
+    .select("name, company_email, avatar_url")
+    .eq("id", creedId)
+    .maybeSingle()) as {
+    data: { name?: string; company_email?: string | null; avatar_url?: string | null } | null;
+    error: unknown;
+  };
+  const creedResult = creedWithAvatar.error
+    ? ((await admin
+        .from("creeds")
+        .select("name, company_email")
+        .eq("id", creedId)
+        .maybeSingle()) as {
+        data: { name?: string; company_email?: string | null } | null;
+        error: unknown;
+      })
+    : creedWithAvatar;
+
   const [
-    creedResult,
     sectionsResult,
     proposalsResult,
     activityResult,
@@ -1453,11 +1495,6 @@ export async function loadCompanyCreedState(
     companyGithubIntegration,
     companyVersionControlResult,
   ] = await Promise.all([
-    admin
-      .from("creeds")
-      .select("name, company_email")
-      .eq("id", creedId)
-      .maybeSingle(),
     admin
       .from("creed_sections")
       .select("*")
@@ -1525,9 +1562,11 @@ export async function loadCompanyCreedState(
   const creedRow = creedResult.data as {
     name?: string;
     company_email?: string | null;
+    avatar_url?: string | null;
   } | null;
   const creedName = creedRow?.name ?? "Company";
   const companyEmail = creedRow?.company_email ?? undefined;
+  const companyAvatarUrl = creedRow?.avatar_url ?? undefined;
   const allSectionRows = (sectionsResult.data as SectionRow[] | null) ?? [];
   const memberRows =
     (membersResult.data as Array<{
@@ -1655,6 +1694,7 @@ export async function loadCompanyCreedState(
   const company: CompanyContext = {
     creedId,
     creedName,
+    avatarUrl: companyAvatarUrl,
     companyEmail,
     myRole: role,
     members,

@@ -37,7 +37,7 @@ export function ConnectionsScreen() {
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--creed-surface)] creed-scrollbar">
-      <div className="mx-auto max-w-6xl px-4 py-8 md:px-12 md:py-10">
+      <div className="mx-auto max-w-[960px] px-4 py-8 md:px-12 md:py-10">
         <div className="max-w-3xl">
           <h1 className="font-heading text-[1.75rem] font-medium tracking-[-0.03em] text-[var(--creed-text-primary)]">
             Connections
@@ -49,8 +49,7 @@ export function ConnectionsScreen() {
             MCP setup
           </h2>
           <p className="mt-2 text-[14px] leading-7 text-[var(--creed-text-secondary)]">
-            Add Creed to any agent that supports MCP by pasting the server URL as a
-            custom connector and authorizing Creed in the browser.
+            Paste the server URL into any MCP agent, then authorize Creed in the browser.
           </p>
         </div>
 

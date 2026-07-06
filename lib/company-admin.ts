@@ -289,6 +289,7 @@ export async function updateCompanyGeneral(params: {
   actor: User;
   name?: string;
   email?: string;
+  avatarUrl?: string;
 }): Promise<AdminResult> {
   const db = admin();
   const actorRole = await getCreedRole(db, params.actor.id, params.creedId);
@@ -315,6 +316,13 @@ export async function updateCompanyGeneral(params: {
       return { ok: false, error: "Enter a valid email.", status: 400 };
     }
     patch.company_email = email || null;
+  }
+  if (params.avatarUrl !== undefined) {
+    const avatarUrl = params.avatarUrl.trim();
+    if (!avatarUrl) {
+      return { ok: false, error: "Avatar URL is required.", status: 400 };
+    }
+    patch.avatar_url = avatarUrl;
   }
   const { error } = await db
     .from("creeds")

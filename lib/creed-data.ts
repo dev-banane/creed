@@ -797,6 +797,8 @@ export type CreedSwitcherItem = {
   type: "personal" | "company";
   name: string;
   role: "owner" | "admin" | "member";
+  avatarInitials: string;
+  avatarUrl?: string;
   // Company Creed still in onboarding: the switcher shows "Set up" and routes
   // to the company onboarding flow instead of the empty file.
   needsSetup?: boolean;
@@ -808,6 +810,7 @@ export type CreedSwitcherItem = {
 export type CompanyContext = {
   creedId: string;
   creedName: string;
+  avatarUrl?: string;
   // The company's shared contact email (owner/admin set it in General). Undefined
   // until set.
   companyEmail?: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
@@ -12,7 +13,11 @@ import { cn } from "@/lib/utils";
 // A small, consistent single-select built on our DropdownMenu (never a native
 // <select>, which renders the OS control and breaks the design language). Used
 // for role / permission pickers across the Company UI.
-export type SelectMenuOption<T extends string> = { value: T; label: string };
+export type SelectMenuOption<T extends string> = {
+  value: T;
+  label: string;
+  avatar?: ReactNode;
+};
 
 export function SelectMenu<T extends string>({
   value,
@@ -47,7 +52,10 @@ export function SelectMenu<T extends string>({
         >
           {/* Placeholder reads as normal text (not greyed) - the disabled
               state alone (e.g. no members) dims the whole control. */}
-          <span className="truncate">{active?.label ?? placeholder}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            {active?.avatar}
+            <span className="truncate">{active?.label ?? placeholder}</span>
+          </span>
           <ChevronDown
             className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)]"
             strokeWidth={2}
@@ -69,8 +77,9 @@ export function SelectMenu<T extends string>({
             }}
             className="flex items-center justify-between gap-3 text-[13px]"
           >
-            <span className="truncate text-[var(--creed-text-primary)]">
-              {option.label}
+            <span className="flex min-w-0 items-center gap-2 text-[var(--creed-text-primary)]">
+              {option.avatar}
+              <span className="truncate">{option.label}</span>
             </span>
             {option.value === value ? (
               <Check

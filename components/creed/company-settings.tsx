@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -11,7 +10,6 @@ import {
   LoaderCircle,
   Mail,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,6 +44,10 @@ import { RemoveSeatsDialog } from "@/components/creed/remove-seats-dialog";
 import { seatCadence } from "@/lib/seat-config";
 import { SearchableSelect } from "@/components/creed/searchable-select";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
+import {
+  EditableProfileAvatar,
+  ProfileAvatar,
+} from "@/components/creed/profile-avatar";
 import { AnimatedIconButton } from "@/components/creed/animated-icon-action";
 import { useAnimatedIconControls } from "@/components/creed/animated-icon-controls";
 import { DownloadIcon } from "@/components/ui/download";
@@ -110,7 +112,7 @@ const INVITE_BUTTON =
 // Company-mode /settings, built to match the personal settings screen exactly:
 // a single scrolling column of sections, each a bare card under an outside H2,
 // separated by rules. Sections mirror the personal ones the company needs:
-// General (name + owner email), Members & permissions, Model usage, Danger zone.
+// Profile (avatar, name, email), Members & permissions, Model usage, Danger zone.
 // AI/money lives in Model usage (like personal) - there is no separate billing
 // or API-key section. Every member SEES every section; access is by role.
 // Managers (owner/admin) edit General + Members. The owner alone manages Model
@@ -129,7 +131,7 @@ const DANGER_BUTTON =
 const FIELD_INPUT =
   "h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px]";
 const FIELD_LABEL =
-  "mb-2 block text-[14px] font-medium text-[var(--creed-text-secondary)]";
+  "mb-2 block text-[14px] font-medium leading-5 text-[var(--creed-text-secondary)]";
 const CARD =
   "mt-4 rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface)] p-5";
 const H2 = "text-[16px] font-medium text-[var(--creed-text-primary)]";
@@ -170,31 +172,21 @@ function Section({
   );
 }
 
-// A member's profile picture with initials fallback, using the same Avatar +
-// Image pattern as the shell's account button (no-referrer, unoptimized, error
-// falls back to initials).
-function MemberAvatar({ member }: { member: CreedMemberSummary }) {
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(member.avatarUrl) && !failed;
+function MemberAvatar({
+  member,
+  size = "md",
+}: {
+  member: CreedMemberSummary;
+  size?: "sm" | "md";
+}) {
   return (
-    <Avatar className="h-9 w-9 shrink-0 overflow-hidden rounded-[10px] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] after:rounded-[10px]">
-      {showImage && member.avatarUrl ? (
-        <Image
-          key={member.avatarUrl}
-          src={member.avatarUrl}
-          alt={member.name}
-          fill
-          className="rounded-[10px] object-cover"
-          referrerPolicy="no-referrer"
-          unoptimized
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <AvatarFallback className="bg-transparent text-[13px] font-medium text-[var(--creed-text-secondary)]">
-          {member.avatarInitials}
-        </AvatarFallback>
-      )}
-    </Avatar>
+    <ProfileAvatar
+      kind="person"
+      name={member.name}
+      initials={member.avatarInitials}
+      avatarUrl={member.avatarUrl}
+      size={size}
+    />
   );
 }
 
@@ -248,6 +240,7 @@ export function CompanySettings() {
   const {
     state,
     refreshState,
+    setProfileAvatar,
     exportMarkdown,
     exportActivityJson,
     exportAllDataJson,
@@ -261,6 +254,7 @@ export function CompanySettings() {
 
   const [nameDraft, setNameDraft] = useState(company?.creedName ?? "");
   const [emailDraft, setEmailDraft] = useState(company?.companyEmail ?? "");
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   // Drives the send-icon hover animation on the Invite button.
@@ -484,6 +478,10 @@ export function CompanySettings() {
   // manager's personal repos into the team picker.
   const vcRepoOwner = state.settings.versionControl.repoOwner;
   const vcRepoName = state.settings.versionControl.repoName;
+  const selectedCommitUrl =
+    vcRepoOwner && vcRepoName && state.settings.versionControl.lastRemoteSha
+      ? `https://github.com/${vcRepoOwner}/${vcRepoName}/commit/${state.settings.versionControl.lastRemoteSha}`
+      : null;
   useEffect(() => {
     if (!isManager || !githubConnected) return;
     let cancelled = false;
@@ -523,15 +521,15 @@ export function CompanySettings() {
     const status = params.get("teamGithub");
     if (!status) return;
     const messages: Record<string, { ok: boolean; text: string }> = {
-      connected: { ok: true, text: "Team GitHub connected." },
+      connected: { ok: true, text: "GitHub connected." },
       error: { ok: false, text: "Could not connect GitHub. Please try again." },
       forbidden: {
         ok: false,
-        text: "Only an owner or admin can connect the team GitHub.",
+        text: "Only an owner or admin can connect GitHub.",
       },
       notconfigured: {
         ok: false,
-        text: "Team GitHub isn't available on this deployment yet.",
+        text: "GitHub isn't available on this deployment yet.",
       },
       invalid: { ok: false, text: "Could not start the GitHub connection." },
     };
@@ -582,6 +580,37 @@ export function CompanySettings() {
     if (await post("/api/app/company/general", { creedId, email: next })) {
       toast.success(next ? "Company email updated." : "Company email cleared.");
       router.refresh();
+    }
+  }
+
+  async function uploadCompanyAvatar(file: File) {
+    if (!creedId) return;
+    setAvatarUploading(true);
+    try {
+      const form = new FormData();
+      form.set("scope", "company");
+      form.set("creedId", creedId);
+      form.set("file", file);
+      const response = await fetch("/api/app/profile/avatar", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        avatarUrl?: string;
+      };
+      if (!response.ok) {
+        toast.error(data.error ?? "Could not save company picture.");
+        return;
+      }
+      if (data.avatarUrl) {
+        setProfileAvatar(data.avatarUrl, "company");
+      }
+      void refreshState();
+      router.refresh();
+      toast.success("Company picture saved.");
+    } finally {
+      setAvatarUploading(false);
     }
   }
 
@@ -679,7 +708,7 @@ export function CompanySettings() {
       setRepos([]);
       setBranches([]);
       await refreshState();
-      toast.success("Team GitHub disconnected.");
+      toast.success("GitHub disconnected.");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not disconnect GitHub.",
@@ -951,40 +980,50 @@ export function CompanySettings() {
 
   const blocks: ReactNode[] = [];
 
-  // ── General ────────────────────────────────────────────────────────────────
+  // ── Profile ────────────────────────────────────────────────────────────────
   // Everyone sees the company name + email; only managers (owner/admin) can edit
   // them. For a plain member the fields render disabled (view-only), matching
   // the greyed-out read-only treatment across the rest of settings.
   blocks.push(
-    <Section key="general" title="General">
-      <div className="space-y-3">
-        <div>
-          <label className={FIELD_LABEL}>Company name</label>
-          <Input
-            value={nameDraft}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={saveName}
-            disabled={!isManager}
-            className={cn(
-              FIELD_INPUT,
-              !isManager && "cursor-not-allowed opacity-60",
-            )}
-          />
-        </div>
-        <div>
-          <label className={FIELD_LABEL}>Company email</label>
-          <Input
-            type="email"
-            value={emailDraft}
-            onChange={(e) => setEmailDraft(e.target.value)}
-            onBlur={saveEmail}
-            placeholder="hello@company.com"
-            disabled={!isManager}
-            className={cn(
-              FIELD_INPUT,
-              !isManager && "cursor-not-allowed opacity-60",
-            )}
-          />
+    <Section key="profile" title="Profile">
+      <div className="grid grid-cols-[calc(1.25rem+0.5rem+2.75rem)_minmax(0,1fr)] items-start gap-x-4 gap-y-4 md:flex md:gap-5">
+        <EditableProfileAvatar
+          kind="company"
+          name={company.creedName}
+          avatarUrl={company.avatarUrl}
+          disabled={!isManager}
+          uploading={avatarUploading}
+          onFile={(file) => void uploadCompanyAvatar(file)}
+        />
+        <div className="contents md:block md:min-w-0 md:flex-1 md:space-y-3">
+          <div className="min-w-0">
+            <label className={FIELD_LABEL}>Company name</label>
+            <Input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={saveName}
+              disabled={!isManager}
+              className={cn(
+                FIELD_INPUT,
+                !isManager && "cursor-not-allowed opacity-60",
+              )}
+            />
+          </div>
+          <div className="col-span-2 min-w-0 md:col-span-1">
+            <label className={FIELD_LABEL}>Company email</label>
+            <Input
+              type="email"
+              value={emailDraft}
+              onChange={(e) => setEmailDraft(e.target.value)}
+              onBlur={saveEmail}
+              placeholder="hello@company.com"
+              disabled={!isManager}
+              className={cn(
+                FIELD_INPUT,
+                !isManager && "cursor-not-allowed opacity-60",
+              )}
+            />
+          </div>
         </div>
       </div>
     </Section>,
@@ -1058,15 +1097,17 @@ export function CompanySettings() {
                   {/* Only the owner sets roles: an admin can't promote a member
                       or demote another admin. Admins can still remove members. */}
                   {isOwner ? (
-                    <SelectMenu<"admin" | "member">
-                      value={m.role as "admin" | "member"}
-                      onChange={(v) => changeRole(m.userId, v)}
-                      align="end"
-                      options={[
-                        { value: "member", label: "Member" },
-                        { value: "admin", label: "Admin" },
-                      ]}
-                    />
+                    <div className="hidden md:block">
+                      <SelectMenu<"admin" | "member">
+                        value={m.role as "admin" | "member"}
+                        onChange={(v) => changeRole(m.userId, v)}
+                        align="end"
+                        options={[
+                          { value: "member", label: "Member" },
+                          { value: "admin", label: "Admin" },
+                        ]}
+                      />
+                    </div>
                   ) : null}
                   {/* Admins can remove members but not other admins; the owner
                       can remove anyone but themselves. */}
@@ -1131,7 +1172,7 @@ export function CompanySettings() {
               <div className="text-[14px] font-medium text-[var(--creed-text-primary)]">
                 Seats
               </div>
-              <p className="mt-1 text-[13px] text-[var(--creed-text-secondary)]">
+              <p className="mt-1 hidden text-[13px] text-[var(--creed-text-secondary)] md:block">
                 {`${seats.used} of ${seats.capacity} in use.`}
                 {seats.used >= seats.capacity
                   ? " Every seat is taken."
@@ -1177,7 +1218,7 @@ export function CompanySettings() {
               <div className="text-[14px] font-medium text-[var(--creed-text-primary)]">
                 Section access
               </div>
-              <p className="mt-1 text-[13px] text-[var(--creed-text-secondary)]">
+              <p className="mt-1 hidden text-[13px] text-[var(--creed-text-secondary)] md:block">
                 Everyone starts with Direct edit.
               </p>
             </div>
@@ -1194,6 +1235,7 @@ export function CompanySettings() {
               options={memberOptions.map((m) => ({
                 value: m.userId,
                 label: m.name,
+                avatar: <MemberAvatar member={m} size="sm" />,
               }))}
             />
           </div>
@@ -1351,19 +1393,13 @@ export function CompanySettings() {
     </Section>,
   );
 
-  // ── Team GitHub connection (managers only) ──────────────────────────────────
-  // This is the TEAM's own GitHub - authorized separately from any member's
-  // personal GitHub - so the team can sync its file to an org repo. Owner/admin
-  // only; members never see it. Version control (repo/branch) lives in its own
-  // manager section below and runs on this connection.
+  // ── Integrations (managers only) ────────────────────────────────────────────
+  // Company integrations are authorized separately from a member's personal
+  // account, so the shared Creed can connect to shared tools.
   if (isManager) {
     blocks.push(
       <section key="integrations" className="scroll-mt-6">
-        <h2 className={H2}>Team GitHub</h2>
-        <p className="mt-1 text-[13px] text-[var(--creed-text-tertiary)]">
-          The team&apos;s shared GitHub connection, separate from your personal
-          one. Used to sync this Creed to a repo.
-        </p>
+        <h2 className={H2}>Integrations</h2>
         <div className="mt-4 divide-y divide-[var(--creed-border)] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface)]">
           <IntegrationRow
             title="GitHub"
@@ -1673,17 +1709,36 @@ export function CompanySettings() {
             />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px] text-[var(--creed-text-secondary)]">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--creed-surface-raised)] px-2 py-1 font-mono text-[var(--creed-text-primary)]">
-            creed.md
+        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-[var(--creed-text-secondary)]">
+          <span className="font-medium text-[var(--creed-text-secondary)]">
+            Last commit
           </span>
-          <span aria-hidden className="text-[var(--creed-text-tertiary)]">
+          <span aria-hidden className="shrink-0 text-[var(--creed-text-tertiary)]">
             ·
           </span>
-          <span>
-            The team file syncs to this repo on the team&apos;s GitHub
-            connection. Owners and admins manage version control.
-          </span>
+          {state.settings.versionControl.lastRemoteMessage ? (
+            <span className="inline-flex min-w-0 items-center gap-2">
+              {selectedCommitUrl ? (
+                <a
+                  href={selectedCommitUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={state.settings.versionControl.lastRemoteMessage}
+                  className="truncate font-medium text-[#2563EB] transition-colors hover:text-[#1D4ED8]"
+                >
+                  {state.settings.versionControl.lastRemoteMessage}
+                </a>
+              ) : (
+                <span className="truncate text-[var(--creed-text-secondary)]">
+                  {state.settings.versionControl.lastRemoteMessage}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-[var(--creed-text-tertiary)]">
+              no commits yet
+            </span>
+          )}
         </div>
       </Section>,
     );
@@ -1796,16 +1851,27 @@ export function CompanySettings() {
   // ── Data (any member; scoped to their visible sections) ──────────────────────
   blocks.push(
     <Section key="data" title="Data">
-      <p className="text-[14px] leading-7 text-[var(--creed-text-secondary)]">
-        <span className="inline-flex items-center rounded-md bg-[var(--creed-surface-raised)] px-2 py-0.5 align-middle font-mono text-[13px] text-[var(--creed-text-primary)]">
-          {dataWordCount.toLocaleString()}
-        </span>{" "}
-        {dataWordCount === 1 ? "word" : "words"} across{" "}
-        <span className="inline-flex items-center rounded-md bg-[var(--creed-surface-raised)] px-2 py-0.5 align-middle font-mono text-[13px] text-[var(--creed-text-primary)]">
-          {liveSections.length.toLocaleString()}
-        </span>{" "}
-        {liveSections.length === 1 ? "section" : "sections"} you can see.
-      </p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[14px]">
+        <span>
+          <span className="font-medium text-[var(--creed-text-primary)]">
+            {dataWordCount.toLocaleString()}
+          </span>
+          <span className="ml-1 text-[var(--creed-text-secondary)]">
+            {dataWordCount === 1 ? "word" : "words"}
+          </span>
+        </span>
+        <span aria-hidden className="text-[var(--creed-text-tertiary)]">
+          ·
+        </span>
+        <span>
+          <span className="font-medium text-[var(--creed-text-primary)]">
+            {liveSections.length.toLocaleString()}
+          </span>
+          <span className="ml-1 text-[var(--creed-text-secondary)]">
+            visible {liveSections.length === 1 ? "section" : "sections"}
+          </span>
+        </span>
+      </div>
       <div className="mt-4 flex flex-wrap gap-3">
         <AnimatedIconButton
           icon={DownloadIcon}
@@ -1875,7 +1941,8 @@ export function CompanySettings() {
               }
               options={transferOptions.map((m) => ({
                 value: m.userId,
-                label: m.email ? `${m.name} (${m.email})` : m.name,
+                label: m.name,
+                avatar: <MemberAvatar member={m} size="sm" />,
               }))}
             />
           </div>

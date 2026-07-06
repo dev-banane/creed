@@ -88,6 +88,7 @@ type CreedContextValue = {
     patch: Partial<CreedSettings["versionControl"]>,
   ) => void;
   setDisplayName: (name: string) => Promise<boolean>;
+  setProfileAvatar: (avatarUrl: string, scope: "personal" | "company") => void;
   refreshState: () => Promise<void>;
   switchCreed: (creedId: string) => Promise<{ ok: boolean; error?: string }>;
   importSections: (sections: CreedSection[]) => Promise<void>;
@@ -1775,6 +1776,40 @@ export function CreedProvider({
     return true;
   }
 
+  function setProfileAvatar(avatarUrl: string, scope: "personal" | "company") {
+    const trimmed = avatarUrl.trim();
+    if (!trimmed) return;
+
+    commitState((current) => {
+      if (scope === "company") {
+        const creedId = current.company?.creedId ?? current.creedId;
+        return {
+          ...current,
+          company: current.company
+            ? {
+                ...current.company,
+                avatarUrl: trimmed,
+              }
+            : current.company,
+          creeds: current.creeds?.map((creed) =>
+            creed.id === creedId ? { ...creed, avatarUrl: trimmed } : creed,
+          ),
+        };
+      }
+
+      return {
+        ...current,
+        user: {
+          ...current.user,
+          avatarUrl: trimmed,
+        },
+        creeds: current.creeds?.map((creed) =>
+          creed.type === "personal" ? { ...creed, avatarUrl: trimmed } : creed,
+        ),
+      };
+    });
+  }
+
   async function deleteAccount() {
     if (!persistenceEnabled) {
       return;
@@ -1922,6 +1957,7 @@ export function CreedProvider({
       setAllSectionPermissions,
       setVersionControlConfig,
       setDisplayName,
+      setProfileAvatar,
       refreshState: syncFromServer,
       switchCreed,
       importSections,
@@ -1960,6 +1996,7 @@ export function CreedProvider({
       setAllSectionPermissions,
       setVersionControlConfig,
       setDisplayName,
+      setProfileAvatar,
       syncFromServer,
       switchCreed,
       importSections,

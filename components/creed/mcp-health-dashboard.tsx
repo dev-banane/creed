@@ -510,10 +510,10 @@ export function McpHealthDashboard() {
                     </div>
                   </div>
                   <div
-                    className="min-w-0 flex-1 space-y-1"
+                    className="max-h-[200px] min-w-0 flex-1 space-y-1 overflow-y-auto pr-1 creed-scrollbar"
                     onMouseLeave={() => setActiveSection(null)}
                   >
-                    {sections.slice(0, 6).map((section, index) => (
+                    {sections.map((section, index) => (
                       <div
                         key={section.sectionId}
                         onMouseEnter={() => setActiveSection(index)}

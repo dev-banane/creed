@@ -32,7 +32,6 @@ import { ReviewPill } from "@/components/creed/review-pill";
 import { InlineProposalDiff } from "@/components/creed/inline-proposal-diff";
 import {
   OverallQualityPopover,
-  QualityRefreshButton,
   QualityRing,
   SectionQualityPopover,
 } from "@/components/creed/file-quality-ui";
@@ -480,6 +479,8 @@ function SectionCard({
   pendingProposals,
   diffBaseBySection,
   globalLocked,
+  qualityLoading,
+  onRefreshQuality,
   onAccept,
   onReject,
 }: {
@@ -488,6 +489,8 @@ function SectionCard({
   pendingProposals: Proposal[];
   diffBaseBySection: Record<string, string>;
   globalLocked: boolean;
+  qualityLoading?: boolean;
+  onRefreshQuality: () => void;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
 }) {
@@ -502,7 +505,14 @@ function SectionCard({
               <span className="text-[15px] font-medium leading-none md:text-[16px]" style={{ color: accent }}>
                 {section.name}
               </span>
-              <SectionQualityPopover quality={quality} color={accent} sectionName={section.name} />
+              <SectionQualityPopover
+                quality={quality}
+                color={accent}
+                loading={qualityLoading}
+                sectionName={section.name}
+                actionAvailable
+                onAction={onRefreshQuality}
+              />
               {globalLocked ? (
                 <Lock className="h-3.5 w-3.5 text-[var(--creed-text-tertiary)]" />
               ) : null}
@@ -752,17 +762,23 @@ export function CreedAppDemo() {
                   </div>
 
                   <div className="flex items-center gap-2 self-start">
-                    {/* Refresh is redundant on mobile where space is tight. */}
-                    <span className="hidden sm:inline-flex">
-                      <QualityRefreshButton title="Re-run analysis" loading={qualityLoading} onClick={runQuality} />
-                    </span>
-                    <OverallQualityPopover report={quality} loading={qualityLoading}>
+                    <OverallQualityPopover
+                      report={quality}
+                      loading={qualityLoading}
+                      actionAvailable
+                      onAction={runQuality}
+                    >
                       <button
                         type="button"
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] data-[state=open]:bg-[var(--creed-surface-raised)]"
-                        aria-label="Show Creed quality"
+                        aria-label="Run Creed quality analysis"
                       >
-                        <QualityRing score={quality.overall.score} color="#2563EB" loading={qualityLoading} />
+                        <QualityRing
+                          score={quality.overall.score}
+                          color="#2563EB"
+                          loading={qualityLoading}
+                          actionable
+                        />
                       </button>
                     </OverallQualityPopover>
 
@@ -865,6 +881,8 @@ export function CreedAppDemo() {
                       pendingProposals={proposals.filter((p) => p.sectionId === s.id)}
                       diffBaseBySection={diffBaseBySection}
                       globalLocked={locked}
+                      qualityLoading={qualityLoading}
+                      onRefreshQuality={runQuality}
                       onAccept={acceptProposal}
                       onReject={rejectProposal}
                     />
