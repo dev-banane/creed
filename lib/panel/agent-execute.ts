@@ -33,6 +33,7 @@ import {
   setCompanySectionArchived,
   type CompanyMcpOp,
 } from "@/lib/company-sections";
+import { getPersonalCreedId } from "@/lib/creed-membership";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { log } from "@/lib/observability";
 import type { AgentAction, AgentExecResult } from "@/lib/panel/agent";
@@ -95,6 +96,10 @@ export async function executeAgentActions({
   const admin = getSupabaseAdminClient();
   const baseState =
     preloaded ?? (await loadCreedState(admin as never, user, { proposalLimit: 1, activityLimit: 1 })).state;
+  const creedId = baseState.creedId ?? (await getPersonalCreedId(admin as never, user.id));
+  if (!creedId) {
+    return { ok: false, reason: "Could not resolve Creed for proposal.", results: [] };
+  }
 
   // Route direct-vs-proposal against the ORIGINAL permissions, so a
   // set-permission earlier in the same run can't silently upgrade a later
@@ -137,6 +142,7 @@ export async function executeAgentActions({
     const { error: proposalError } = await proposalTable.upsert(
       {
         id: proposalId,
+        creed_id: creedId,
         user_id: user.id,
         section_id: isNew ? "new-section" : params.sectionId,
         section_name: params.sectionName,
@@ -165,6 +171,7 @@ export async function executeAgentActions({
       await activityTable.upsert(
         {
           id: `activity-${proposalId}`,
+          creed_id: creedId,
           user_id: user.id,
           proposal_id: proposalId,
           section_id: isNew ? "new-section" : params.sectionId,
@@ -519,4 +526,3 @@ export async function executeCompanyAgentActions({
 
   return { ok: true, reason: "", results };
 }
-

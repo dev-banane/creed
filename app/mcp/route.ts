@@ -185,6 +185,8 @@ const tools = [
             "delete_section",
             "rename_section",
             "recolor_section",
+            "append_to_section",
+            "reorder_section",
           ],
           description: [
             "Payload shape per operation:",
@@ -193,12 +195,22 @@ const tools = [
             "- delete_section: { sectionId }.",
             "- rename_section: { sectionId, name: 'New name' }.",
             "- recolor_section: { sectionId, accent: '<accent key>' }. Valid accents: identity, stack, operating-principles, decisions, preferences, workflows, tools, boundaries, questions, skills, mini-skills, projects, output, rose, custom.",
+            "- append_to_section: { sectionId, contentMarkdown? | contentHtml? }.",
+            "- reorder_section: { sectionId, afterSectionId? | position: 'first' | 'last' }.",
           ].join("\n"),
         },
         sectionId: { type: "string" },
         agentName: { type: "string" },
         name: { type: "string", description: "New name (rename_section only)." },
         accent: { type: "string", description: "Accent key (recolor_section only)." },
+        afterSectionId: { type: "string", description: "Anchor section id (reorder_section only)." },
+        position: {
+          type: "string",
+          enum: ["first", "last"],
+          description: "Move target to top or bottom (reorder_section only).",
+        },
+        contentMarkdown: { type: "string", description: "Markdown to append (append_to_section only)." },
+        contentHtml: { type: "string", description: "HTML to append (append_to_section only)." },
         section: {
           type: "object",
           description: "Section payload for update_section / create_section.",
@@ -547,6 +559,12 @@ function stringArg(args: Record<string, unknown>, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function objectArg(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 // The canonical machine-readable view of what an agent can do. Mirrors the
 // AgentWritePolicy shape in lib/creed-data.ts but exposed as its own MCP
 // tool so agents can poll it without reading the full markdown contract.
@@ -597,6 +615,9 @@ function buildWritePolicy(state: CreedState) {
 
   const proposalTargets = [...writableSectionIds, "new-section"];
   const directEditTargets = anyDirect ? [...directSectionIds, "new-section"] : [];
+  const proposeSectionIds = readableSections
+    .filter((section) => section.agentPermission === "propose")
+    .map((section) => section.id);
 
   return {
     preferredMode: anyDirect ? "direct_edit" : "proposals_only",
@@ -627,7 +648,11 @@ function buildWritePolicy(state: CreedState) {
     // meaningful for sections whose permission is "direct").
     directEditOperations: anyDirect ? [...DIRECT_EDIT_OPERATIONS] : [],
     proposalTargets,
+    proposalTargetSections: [...proposalTargets],
     directEditTargets,
+    directEditTargetSections: [...directEditTargets],
+    proposeSections: proposeSectionIds,
+    directSections: directSectionIds,
     // Both keys point to the same agent-writable section list so consumers
     // don't have to reconcile two near-identical terms. `writableSections`
     // is kept as an alias for older agents already trained on the name.
@@ -858,16 +883,17 @@ async function handleToolCall(
     if (state.creedType === "company") {
       return runCompanyWrite(state, user, agentName, companyOpFromDraft(state, args));
     }
+    const normalized = normalizeLegacyProposalArgs(state, args);
     const proposalBody = {
       id: typeof args.id === "string" ? args.id : `mcp-proposal-${Date.now()}`,
-      sectionId: stringArg(args, "sectionId"),
-      sectionName: stringArg(args, "sectionName"),
+      sectionId: normalized.sectionId,
+      sectionName: normalized.sectionName,
       agentName,
       changeType: stringArg(args, "changeType"),
       reason: stringArg(args, "reason"),
       impact: stringArg(args, "impact"),
       confidence: stringArg(args, "confidence"),
-      draft: args.draft,
+      draft: normalized.draft,
       integration: "mcp",
     };
 
@@ -885,8 +911,22 @@ async function handleToolCall(
       throw new Error("No sections allow direct edits. Use propose_creed_update instead.");
     }
 
+    const normalized = normalizeLegacyDirectEditArgs(state, args);
+    const directFallback = directEditAsProposalBody(state, normalized, agentName);
+    if (directFallback) {
+      await callInternalCreedRoute(request, "/api/creed/proposals", state.writeToken, directFallback);
+      return jsonToolResult({
+        ok: true,
+        mode: "proposed",
+        operation: normalized.operation,
+        sectionId: directFallback.sectionId,
+        proposalId: directFallback.id,
+        note: "Target section requires approval, so direct_edit_creed safely filed a proposal instead.",
+      });
+    }
+
     await callInternalCreedRoute(request, "/api/creed/write", state.directEditToken, {
-      ...args,
+      ...normalized,
       agentName,
       integration: "mcp",
     });
@@ -1204,6 +1244,201 @@ function resolveSectionOrThrow(state: CreedState, sectionId: string): CreedSecti
   throw new Error(
     `No section matches "${sectionId}". Available sections: ${available || "none"}.`
   );
+}
+
+function resolveSectionFromLooseArgs(
+  state: CreedState,
+  args: Record<string, unknown>
+): CreedSection {
+  const candidate =
+    stringArg(args, "sectionId") ||
+    stringArg(args, "sectionName") ||
+    stringArg(args, "name");
+  return resolveSectionOrThrow(state, candidate);
+}
+
+function normalizeLegacyProposalArgs(
+  state: CreedState,
+  args: Record<string, unknown>
+): {
+  sectionId: string;
+  sectionName: string;
+  draft: Record<string, unknown>;
+} {
+  const rawDraft = objectArg(args.draft);
+  let draft: Record<string, unknown> = { ...rawDraft };
+  const explicitKind = typeof draft.kind === "string" ? draft.kind : "";
+
+  if (!explicitKind) {
+    const contentMarkdown = stringArg(args, "contentMarkdown");
+    const contentHtml = stringArg(args, "contentHtml");
+    if (contentMarkdown || contentHtml) {
+      draft = {
+        kind: "rich-text",
+        ...(contentMarkdown ? { contentMarkdown } : {}),
+        ...(contentHtml ? { contentHtml } : {}),
+      };
+    }
+  }
+
+  const kind = typeof draft.kind === "string" ? draft.kind : "rich-text";
+  if (kind === "new-section") {
+    const name =
+      typeof draft.name === "string" && draft.name.trim()
+        ? draft.name.trim()
+        : stringArg(args, "sectionName") || stringArg(args, "name") || "New Section";
+    return {
+      sectionId: "new-section",
+      sectionName: name,
+      draft: { ...draft, kind, name },
+    };
+  }
+
+  const section = resolveSectionFromLooseArgs(state, args);
+  return {
+    sectionId: section.id,
+    sectionName: stringArg(args, "sectionName") || section.name,
+    draft: Object.keys(draft).length > 0 ? { kind, ...draft } : { kind: "rich-text" },
+  };
+}
+
+function normalizeLegacyDirectEditArgs(
+  state: CreedState,
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const operation = stringArg(args, "operation") || "update_section";
+  const section = objectArg(args.section);
+  const topLevelContent = {
+    contentMarkdown: stringArg(args, "contentMarkdown"),
+    contentHtml: stringArg(args, "contentHtml"),
+  };
+
+  if (operation === "create_section") {
+    const name = stringArg(section, "name") || stringArg(args, "sectionName") || stringArg(args, "name");
+    return {
+      ...args,
+      operation,
+      section: {
+        ...section,
+        kind: "rich-text",
+        name,
+        contentMarkdown: stringArg(section, "contentMarkdown") || topLevelContent.contentMarkdown || undefined,
+        contentHtml: stringArg(section, "contentHtml") || topLevelContent.contentHtml || undefined,
+        accent: isAccentKey(section.accent) ? section.accent : undefined,
+        insertAfterSectionId:
+          typeof section.insertAfterSectionId === "string"
+            ? section.insertAfterSectionId
+            : stringArg(args, "insertAfterSectionId") || undefined,
+      },
+    };
+  }
+
+  const target = resolveSectionFromLooseArgs(state, args);
+  if (operation === "update_section") {
+    return {
+      ...args,
+      operation,
+      sectionId: target.id,
+      section:
+        Object.keys(section).length > 0
+          ? section
+          : {
+              kind: "rich-text",
+              contentMarkdown: topLevelContent.contentMarkdown || undefined,
+              contentHtml: topLevelContent.contentHtml || undefined,
+            },
+    };
+  }
+
+  if (operation === "append_to_section") {
+    return {
+      ...args,
+      operation,
+      sectionId: target.id,
+      contentMarkdown:
+        topLevelContent.contentMarkdown || stringArg(section, "contentMarkdown") || undefined,
+      contentHtml: topLevelContent.contentHtml || stringArg(section, "contentHtml") || undefined,
+    };
+  }
+
+  if (operation === "reorder_section") {
+    const anchor = stringArg(args, "afterSectionId");
+    return {
+      ...args,
+      operation,
+      sectionId: target.id,
+      afterSectionId: anchor ? resolveSectionOrThrow(state, anchor).id : undefined,
+      position: args.position === "first" || args.position === "last" ? args.position : undefined,
+    };
+  }
+
+  return {
+    ...args,
+    operation,
+    sectionId: target.id,
+  };
+}
+
+function directEditAsProposalBody(
+  state: CreedState,
+  args: Record<string, unknown>,
+  agentName: string
+): Record<string, unknown> | null {
+  const operation = stringArg(args, "operation");
+  if (operation === "create_section") return null;
+
+  const section = resolveSectionOrThrow(state, stringArg(args, "sectionId"));
+  if (section.agentPermission === "direct") return null;
+  sectionUseDirectEdit(section);
+
+  const proposalId = `mcp-direct-fallback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const sectionPayload = objectArg(args.section);
+  let draft: Record<string, unknown>;
+  let reason = "Target section requires approval, so this was filed as a proposal.";
+
+  if (operation === "delete_section") {
+    draft = { kind: "delete-section" };
+    reason = "Section requires approval before deletion.";
+  } else if (operation === "rename_section") {
+    draft = { kind: "rename-section", name: stringArg(args, "name") };
+    reason = "Section requires approval before renaming.";
+  } else if (operation === "recolor_section") {
+    draft = { kind: "recolor-section", accent: args.accent };
+    reason = "Section requires approval before recolouring.";
+  } else if (operation === "reorder_section") {
+    draft = {
+      kind: "reorder-section",
+      afterSectionId: stringArg(args, "afterSectionId") || undefined,
+      position: args.position === "first" || args.position === "last" ? args.position : undefined,
+    };
+    reason = "Section requires approval before moving.";
+  } else if (operation === "append_to_section") {
+    const contentMarkdown = stringArg(args, "contentMarkdown") || stringArg(sectionPayload, "contentMarkdown");
+    const contentHtml = stringArg(args, "contentHtml") || stringArg(sectionPayload, "contentHtml");
+    const appendedHtml = contentMarkdown ? markdownToRichHtml(contentMarkdown) : contentHtml;
+    const existing = (section.content ?? "").trim();
+    const separator = existing ? `<hr class="creed-hr" />` : "";
+    draft = { kind: "rich-text", contentHtml: `${existing}${separator}${appendedHtml}` };
+    reason = "Captured new context that adds to the existing section.";
+  } else {
+    const contentMarkdown = stringArg(sectionPayload, "contentMarkdown") || stringArg(args, "contentMarkdown");
+    const contentHtml = stringArg(sectionPayload, "contentHtml") || stringArg(args, "contentHtml");
+    draft = {
+      kind: "rich-text",
+      ...(contentMarkdown ? { contentMarkdown } : {}),
+      ...(contentHtml ? { contentHtml } : {}),
+    };
+  }
+
+  return {
+    id: proposalId,
+    sectionId: section.id,
+    sectionName: section.name,
+    agentName,
+    reason,
+    draft,
+    integration: "mcp",
+  };
 }
 
 // Per-section gate for the flat creed_* mutation tools: read-only / hidden

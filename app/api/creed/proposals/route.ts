@@ -11,6 +11,7 @@ import {
   type Proposal,
 } from "@/lib/creed-data";
 import { findUserIdByProposalToken, loadCreedState, recordConnectionUsage } from "@/lib/creed-backend";
+import { getPersonalCreedId } from "@/lib/creed-membership";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/lib/supabase/env";
@@ -68,6 +69,10 @@ export async function POST(request: Request) {
     proposalLimit: 1,
     activityLimit: 1,
   });
+  const creedId = state.creedId ?? (await getPersonalCreedId(admin as never, userId));
+  if (!creedId) {
+    return NextResponse.json({ error: "Could not resolve Creed for proposal." }, { status: 500 });
+  }
 
   const submittedBody = (await request.json()) as ProposalSubmission;
   const normalizedDraft = submittedBody.draft
@@ -297,6 +302,7 @@ export async function POST(request: Request) {
   const baseRevision = body.sectionId === "new-section" ? null : (state.sectionRevisions[body.sectionId] ?? null);
   const proposalRow = {
     id: body.id,
+    creed_id: creedId,
     user_id: userId,
     section_id: body.sectionId,
     section_name: body.sectionName,
@@ -326,6 +332,7 @@ export async function POST(request: Request) {
 
   const activityRow = {
     id: `activity-${body.id}`,
+    creed_id: creedId,
     user_id: userId,
     proposal_id: body.id,
     section_id: body.sectionId,
