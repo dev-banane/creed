@@ -69,17 +69,26 @@ type CacheEntry = {
   promise: Promise<McpHealthSummary | null> | null;
 };
 
-const cache = new Map<McpHealthRange, CacheEntry>();
+// Keyed by Creed so switching between a personal and a company Creed never
+// serves the previous Creed's cached dashboard. The server scopes the response
+// to the active Creed via its cookie; the key here just keeps the client cache
+// buckets separate. Empty creedKey = the active/personal Creed.
+const cache = new Map<string, CacheEntry>();
+
+function cacheKey(creedKey: string, range: McpHealthRange): string {
+  return `${creedKey}::${range}`;
+}
 
 /** Synchronous read of an already-loaded range, for instant first render. */
-export function getCachedMcpHealth(range: McpHealthRange): McpHealthSummary | null {
-  return cache.get(range)?.value ?? null;
+export function getCachedMcpHealth(range: McpHealthRange, creedKey = ""): McpHealthSummary | null {
+  return cache.get(cacheKey(creedKey, range))?.value ?? null;
 }
 
 /** Fetch (and cache) the health summary for a range. Dedupes in-flight calls. */
-export function loadMcpHealth(range: McpHealthRange): Promise<McpHealthSummary | null> {
-  const entry = cache.get(range) ?? { value: null, promise: null };
-  cache.set(range, entry);
+export function loadMcpHealth(range: McpHealthRange, creedKey = ""): Promise<McpHealthSummary | null> {
+  const key = cacheKey(creedKey, range);
+  const entry = cache.get(key) ?? { value: null, promise: null };
+  cache.set(key, entry);
 
   if (!entry.promise) {
     entry.promise = fetch(`/api/app/mcp/health?range=${range}`, { cache: "no-store" })
@@ -97,6 +106,6 @@ export function loadMcpHealth(range: McpHealthRange): Promise<McpHealthSummary |
 }
 
 /** Warm the default range in the background (called from the app shell). */
-export function preloadMcpHealth(range: McpHealthRange = "30d") {
-  void loadMcpHealth(range).catch(() => null);
+export function preloadMcpHealth(range: McpHealthRange = "30d", creedKey = "") {
+  void loadMcpHealth(range, creedKey).catch(() => null);
 }

@@ -2,7 +2,7 @@ import "server-only";
 import Stripe from "stripe";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
-import { creditTopup } from "@/lib/ai/credits";
+import { creditTopup, companyCreditTopup } from "@/lib/ai/credits";
 import { revokeOAuthTokensForUser } from "@/lib/oauth";
 import { isChargeFullyRefunded } from "@/lib/stripe-refund";
 import { log } from "@/lib/observability";
@@ -67,8 +67,7 @@ export type PurchaseCadence = "monthly" | "yearly" | "lifetime";
 // dashboard; resolving by key means a price can be re-pointed (Stripe prices
 // are immutable, so a change = a new price) with zero code or env changes. The
 // same keys resolve to the right price in test vs live, since each mode has its
-// own prices carrying the same lookup keys. Company keys aren't assigned yet,
-// so Company stays "Coming Soon".
+// own prices carrying the same lookup keys.
 const PRICE_LOOKUP_KEYS: Record<CreedPlan, Record<PurchaseCadence, string | null>> = {
   personal: {
     monthly: "creed_personal_monthly",
@@ -76,14 +75,27 @@ const PRICE_LOOKUP_KEYS: Record<CreedPlan, Record<PurchaseCadence, string | null
     lifetime: "creed_personal_lifetime",
   },
   company: {
-    monthly: null,
-    yearly: null,
-    lifetime: null,
+    monthly: "creed_company_monthly",
+    yearly: "creed_company_yearly",
+    lifetime: "creed_company_lifetime",
   },
+};
+
+// Per-extra-seat prices for the Company plan. Monthly/yearly seats are a
+// recurring quantity added as a second subscription item; lifetime seats are a
+// one-time charge that raises seat capacity. Only Company has seat prices.
+const SEAT_LOOKUP_KEYS: Record<PurchaseCadence, string | null> = {
+  monthly: "creed_company_seat_monthly",
+  yearly: "creed_company_seat_yearly",
+  lifetime: "creed_company_seat_lifetime",
 };
 
 function lookupKeyFor(plan: CreedPlan, cadence: PurchaseCadence): string | null {
   return PRICE_LOOKUP_KEYS[plan][cadence];
+}
+
+function seatLookupKeyFor(cadence: PurchaseCadence): string | null {
+  return SEAT_LOOKUP_KEYS[cadence];
 }
 
 // Resolved lookup_key → price_id, cached for the process lifetime. Prices are
@@ -113,6 +125,34 @@ export async function resolvePriceId(plan: CreedPlan, cadence: PurchaseCadence):
   const price = prices.data[0];
   if (!price) {
     throw new Error(`No active Stripe price found for lookup key "${key}".`);
+  }
+
+  priceIdCache.set(key, price.id);
+  return price.id;
+}
+
+/**
+ * Resolve the live Stripe price id for an extra Company seat at a given cadence.
+ * Same lookup-key + cache mechanics as resolvePriceId; throws if the seat price
+ * is not configured so a misconfigured seat purchase fails loudly.
+ */
+export async function resolveSeatPriceId(cadence: PurchaseCadence): Promise<string> {
+  const key = seatLookupKeyFor(cadence);
+  if (!key) {
+    throw new Error(`No Stripe seat price configured for ${cadence}.`);
+  }
+
+  const cached = priceIdCache.get(key);
+  if (cached) return cached;
+
+  const prices = await getStripeClient().prices.list({
+    lookup_keys: [key],
+    active: true,
+    limit: 1,
+  });
+  const price = prices.data[0];
+  if (!price) {
+    throw new Error(`No active Stripe seat price found for lookup key "${key}".`);
   }
 
   priceIdCache.set(key, price.id);
@@ -375,6 +415,54 @@ export async function markEntitlementWelcomed(userId: string): Promise<void> {
     .from("creed_entitlements")
     .update({ welcomed_at: new Date().toISOString() })
     .eq("user_id", userId);
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Welcome-pop-up state for a company Creed's owner. Company owners don't have a
+ * personal `creed_entitlements` row driving the tour, so their first-run tour is
+ * gated on `creed_company_billing.paid_at` / `welcomed_at` instead. Read via the
+ * admin client (billing is owner-only RLS) and fully fault-tolerant: any error -
+ * including `welcomed_at` not existing yet before its migration - resolves to
+ * "don't show". Same show rule as the personal tour.
+ */
+export async function getCompanyWelcomeState(
+  creedId: string
+): Promise<WelcomeState> {
+  const admin = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
+  try {
+    const { data, error } = (await admin
+      .from("creed_company_billing")
+      .select("paid_at, welcomed_at")
+      .eq("creed_id", creedId)
+      .maybeSingle()) as {
+      data: { paid_at?: string | null; welcomed_at?: string | null } | null;
+      error: { message: string } | null;
+    };
+    if (error || !data) return { showWelcome: false, paidAt: null };
+    const paidAt = data.paid_at ?? null;
+    return {
+      showWelcome: shouldShowWelcome(paidAt, data.welcomed_at ?? null),
+      paidAt,
+    };
+  } catch {
+    return { showWelcome: false, paidAt: null };
+  }
+}
+
+/**
+ * Mark the company welcome tour as seen for a company Creed. Writes
+ * `welcomed_at` via the admin client (owner-only table). Fails soft in the same
+ * way as the personal marker; the caller swallows errors.
+ */
+export async function markCompanyWelcomed(creedId: string): Promise<void> {
+  const admin = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
+  const { error } = await admin
+    .from("creed_company_billing")
+    .update({ welcomed_at: new Date().toISOString() })
+    .eq("creed_id", creedId);
   if (error) {
     throw new Error(error.message);
   }
@@ -810,6 +898,17 @@ export async function creditBalanceFromPaymentIntent(
   const amountReceived = paymentIntent.amount_received ?? 0;
   if (amountReceived <= 0) {
     return false;
+  }
+  // A company top-up carries the company creed_id in metadata and lands in the
+  // pooled company balance; a personal top-up credits the user.
+  const creedId = typeof metadata.creedId === "string" ? metadata.creedId : "";
+  if (creedId) {
+    await companyCreditTopup({
+      creedId,
+      amountMicro: amountReceived * 10_000,
+      paymentIntentId: paymentIntent.id,
+    });
+    return true;
   }
   await creditTopup({
     userId,

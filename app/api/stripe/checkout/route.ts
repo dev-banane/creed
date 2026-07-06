@@ -9,6 +9,7 @@ import {
   isPlanPurchasable,
   resolvePriceId,
 } from "@/lib/stripe";
+import { userOwnsCompany } from "@/lib/company-billing";
 import { getSiteUrl } from "@/lib/supabase/env";
 import { log } from "@/lib/observability";
 
@@ -65,9 +66,23 @@ export async function POST(request: Request) {
     );
   }
 
+  // V1 allows one company per owner. Block a second company purchase (the buyer
+  // manages seats/billing on their existing company instead).
+  if (plan === "company" && (await userOwnsCompany(user.id))) {
+    return NextResponse.json(
+      { error: "You already own a company Creed.", alreadyOwnsCompany: true },
+      { status: 409 }
+    );
+  }
+
   try {
     const existing = await getEntitlement(user.id);
-    if (existing && existing.billingMode === "lifetime" && existing.status === "paid") {
+    if (
+      plan === "personal" &&
+      existing &&
+      existing.billingMode === "lifetime" &&
+      existing.status === "paid"
+    ) {
       return NextResponse.json(
         { error: "You already own Creed.", alreadyOwned: true },
         { status: 409 }
@@ -75,6 +90,7 @@ export async function POST(request: Request) {
     }
     if (
       isSubscription &&
+      plan === "personal" &&
       existing &&
       existing.billingMode === "subscription" &&
       ["active", "trialing", "past_due"].includes(existing.status)

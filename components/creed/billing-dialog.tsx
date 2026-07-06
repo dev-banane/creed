@@ -1,13 +1,10 @@
 "use client";
 
-// Billing modal, opened from the profile dropdown. Reads the current
-// entitlement from /api/stripe/status and offers the right actions:
-//
-//   lifetime owner → "You own Creed" - nothing to manage.
-//   subscriber     → renewal/cancel summary, "Manage billing" (Stripe portal),
-//                    and "Own it for life" (upgrade-to-own checkout).
-//   no plan        → link out to pricing (shouldn't happen inside the gated
-//                    app, but handled so the dialog never dead-ends).
+// Billing modal, opened from the profile dropdown. Lists every plan the user
+// owns - their personal plan plus each company Creed they own - as a colored
+// card (personal blue, company amber) showing the plan, its credits, and the
+// right action. It is not scoped to the active Creed: you see everything you own
+// from one place, no matter where you are.
 
 import { useCallback, useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -21,16 +18,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useStripeCheckout } from "@/components/marketing/use-stripe-checkout";
+import { cn } from "@/lib/utils";
 
-type BillingStatus = {
+type PlanCredits = {
+  balanceUsd: number;
+  allowanceUsd: number;
+  allowanceResets: boolean;
+  purchasedUsd: number;
+};
+
+type PlanCard = {
+  scope: "personal" | "company";
+  creedId: string | null;
+  name: string;
   paid: boolean;
-  plan: string | null;
   billingMode: string | null;
   interval: string | null;
   status: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  credits: PlanCredits | null;
 };
 
 type BillingDialogProps = {
@@ -38,35 +45,43 @@ type BillingDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function planLabel(plan: string | null): string {
-  if (plan === "company") return "Company";
-  return "Personal";
+function cadenceLabel(plan: PlanCard): string {
+  if (!plan.paid) return "Free";
+  if (plan.billingMode === "lifetime") return "Lifetime";
+  return plan.interval === "year" ? "Annual" : "Monthly";
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(2)}`;
 }
 
 function formatDate(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 export function BillingDialog({ open, onOpenChange }: BillingDialogProps) {
-  const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [plans, setPlans] = useState<PlanCard[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [openingPortal, setOpeningPortal] = useState(false);
-  const { startCheckout, submitting } = useStripeCheckout();
+  const [portalBusyKey, setPortalBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let active = true;
     setLoading(true);
-    fetch("/api/stripe/status", { cache: "no-store" })
+    fetch("/api/app/billing/plans", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: BillingStatus | null) => {
-        if (active) setStatus(data);
+      .then((data: { plans?: PlanCard[] } | null) => {
+        if (active) setPlans(data?.plans ?? []);
       })
       .catch(() => {
-        if (active) setStatus(null);
+        if (active) setPlans([]);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -76,29 +91,38 @@ export function BillingDialog({ open, onOpenChange }: BillingDialogProps) {
     };
   }, [open]);
 
-  const openPortal = useCallback(async () => {
-    if (openingPortal) return;
-    setOpeningPortal(true);
-    try {
-      const res = await fetch("/api/stripe/portal", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || "Couldn't open billing");
+  // Manage billing opens the Stripe portal for the right customer: the personal
+  // entitlement's, or a specific company's.
+  const openPortal = useCallback(
+    async (plan: PlanCard) => {
+      const key = plan.creedId ?? "personal";
+      if (portalBusyKey) return;
+      setPortalBusyKey(key);
+      try {
+        const res =
+          plan.scope === "company"
+            ? await fetch("/api/app/company/portal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ creedId: plan.creedId }),
+              })
+            : await fetch("/api/stripe/portal", { method: "POST" });
+        const data = (await res.json().catch(() => ({}))) as {
+          url?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.url)
+          throw new Error(data.error || "Couldn't open billing");
+        window.location.href = data.url;
+      } catch (error) {
+        setPortalBusyKey(null);
+        toast.error(
+          error instanceof Error ? error.message : "Couldn't open billing.",
+        );
       }
-      window.location.href = data.url;
-    } catch (error) {
-      setOpeningPortal(false);
-      toast.error(error instanceof Error ? error.message : "Couldn't open billing.");
-    }
-  }, [openingPortal]);
-
-  const isLifetime = status?.billingMode === "lifetime" && status.paid;
-  const isSubscriber = status?.billingMode === "subscription" && status.paid;
-  const renewalDate = formatDate(status?.currentPeriodEnd ?? null);
-  // Monthly and yearly both come back as billingMode "subscription"; the
-  // interval is the only discriminator. Default to monthly for legacy rows
-  // that predate the interval column.
-  const cadenceWord = status?.interval === "year" ? "yearly" : "monthly";
+    },
+    [portalBusyKey],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -106,11 +130,7 @@ export function BillingDialog({ open, onOpenChange }: BillingDialogProps) {
         <DialogHeader>
           <DialogTitle>Billing</DialogTitle>
           <DialogDescription>
-            {isLifetime
-              ? "You own Creed."
-              : isSubscriber
-                ? `${planLabel(status?.plan ?? null)} plan, billed ${cadenceWord}.`
-                : "Manage your Creed plan."}
+            The plans you own and the credits they include.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,68 +138,93 @@ export function BillingDialog({ open, onOpenChange }: BillingDialogProps) {
           <div className="flex items-center justify-center py-10 text-[var(--creed-text-tertiary)]">
             <LoaderCircle className="h-5 w-5 animate-spin" />
           </div>
-        ) : isLifetime ? (
-          <div className="space-y-4 py-2">
-            <div className="rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] p-4">
-              <div className="text-[14px] font-medium text-[var(--creed-text-primary)]">
-                {planLabel(status?.plan ?? null)} - lifetime
-              </div>
-              <p className="mt-1 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-                You bought Creed outright. There&apos;s nothing to manage.
-              </p>
-            </div>
-          </div>
-        ) : isSubscriber ? (
-          <div className="space-y-4 py-2">
-            <div className="rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] p-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[14px] font-medium text-[var(--creed-text-primary)]">
-                  {planLabel(status?.plan ?? null)} - {cadenceWord}
-                </span>
-                {status?.status === "past_due" ? (
-                  <span className="text-[12px] font-medium text-[#B45309] dark:text-[#F5A623]">
-                    Payment past due
-                  </span>
-                ) : null}
-              </div>
-              {renewalDate ? (
-                <p className="mt-1 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-                  {status?.cancelAtPeriodEnd
-                    ? `Access ends on ${renewalDate}.`
-                    : `Renews on ${renewalDate}.`}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              <Button
-                onClick={() => void startCheckout({ plan: "personal", cadence: "lifetime" })}
-                disabled={submitting}
-                className="h-10 w-full bg-[#2563EB] text-[14px] font-medium text-white hover:bg-[#1D4ED8] disabled:opacity-70"
-              >
-                {submitting ? "Starting" : "Own it for life - $199"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => void openPortal()}
-                disabled={openingPortal}
-                className="h-10 w-full border-[var(--creed-border)] bg-transparent text-[14px] font-medium text-[var(--creed-text-primary)] hover:bg-[var(--creed-surface-raised)]"
-              >
-                {openingPortal ? "Opening" : "Manage billing"}
-              </Button>
-            </div>
-          </div>
         ) : (
-          <div className="space-y-4 py-2">
-            <p className="text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-              You don&apos;t have an active plan.
-            </p>
-            <Link
-              href="/pricing"
-              className="inline-flex h-10 w-full items-center justify-center rounded-md bg-[#2563EB] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1D4ED8]"
-            >
-              View plans
-            </Link>
+          <div className="space-y-3 py-1">
+            {(plans ?? []).map((plan) => {
+              const key = plan.creedId ?? "personal";
+              const isCompany = plan.scope === "company";
+              const cadence = cadenceLabel(plan);
+              const isSubscription =
+                plan.paid && plan.billingMode === "subscription";
+              const renewal = formatDate(plan.currentPeriodEnd);
+              const credits = plan.credits;
+              return (
+                <div
+                  key={key}
+                  className={cn(
+                    "rounded-[12px] border p-4",
+                    isCompany
+                      ? "border-[#FDE68A] bg-[#FFFBEB] dark:border-[#78350F]/50 dark:bg-[#422006]/30"
+                      : "border-[#BFDBFE] bg-[#EFF6FF] dark:border-[#1E3A8A]/50 dark:bg-[#172554]/30",
+                  )}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="truncate text-[14px] font-medium text-[var(--creed-text-primary)]">
+                        {/* Company cards don't show the company's name - just
+                            that it's a company plan (one card per company). */}
+                        {isCompany ? "Company" : plan.name}
+                      </span>
+                      <span
+                        className={cn(
+                          "ml-2 inline-flex items-center rounded-[6px] px-1.5 py-0.5 text-[11px] font-medium",
+                          isCompany
+                            ? "bg-[#FEF3C7] text-[#92400E] dark:bg-[#78350F]/50 dark:text-[#FBBF24]"
+                            : "bg-[#DBEAFE] text-[#1D4ED8] dark:bg-[#1E3A8A]/50 dark:text-[#60A5FA]",
+                        )}
+                      >
+                        {cadence}
+                      </span>
+                      {plan.status === "past_due" ? (
+                        <span className="ml-2 text-[12px] font-medium text-[#B45309] dark:text-[#F5A623]">
+                          Payment past due
+                        </span>
+                      ) : null}
+                    </div>
+                    {credits ? (
+                      <span className="shrink-0 font-mono text-[13px] text-[var(--creed-text-primary)]">
+                        {formatUsd(credits.balanceUsd)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <p className="mt-1 text-[13px] leading-6 text-[var(--creed-text-primary)]">
+                    {credits
+                      ? credits.allowanceResets
+                        ? `${formatUsd(credits.balanceUsd)} in credits, refreshed monthly.`
+                        : `${formatUsd(credits.balanceUsd)} in credits included.`
+                      : "No credits on this plan."}
+                    {isSubscription && renewal
+                      ? ` ${plan.cancelAtPeriodEnd ? "Ends" : "Renews"} ${renewal}.`
+                      : ""}
+                  </p>
+
+                  {isSubscription ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => void openPortal(plan)}
+                      disabled={portalBusyKey === key}
+                      className="mt-3 h-9 w-full border-[var(--creed-border)] bg-transparent text-[13px] font-medium text-[var(--creed-text-primary)] hover:bg-[var(--creed-surface-raised)]"
+                    >
+                      {portalBusyKey === key ? "Opening" : "Manage billing"}
+                    </Button>
+                  ) : !plan.paid && plan.scope === "personal" ? (
+                    <Link
+                      href="/pricing"
+                      className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md bg-[#2563EB] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#1D4ED8]"
+                    >
+                      View plans
+                    </Link>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            {(plans ?? []).length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-[var(--creed-text-tertiary)]">
+                No plans yet.
+              </p>
+            ) : null}
           </div>
         )}
       </DialogContent>

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { encryptSecret } from "@/lib/secret-crypto";
 import type { AiModelQuality } from "@/lib/ai/model-catalog";
 import { normalizeFeature } from "@/lib/ai/features";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
 
@@ -88,6 +89,32 @@ export async function readAiSettings(client: unknown, userId: string) {
 
 export async function readPublicAiSettings(client: unknown, userId: string) {
   return buildPublicAiSettings(await readAiSettings(client, userId));
+}
+
+type CompanyAiSettingsRow = {
+  ai_mode?: AiMode;
+  key_status?: "missing" | "present";
+  api_key_last_four?: string | null;
+};
+
+// The company equivalent of readPublicAiSettings, keyed by creed_id. The company
+// table stores key_status as 'missing' | 'present'; map 'present' to 'valid' so
+// the shared settings card renders identically to personal. Read via the admin
+// client (company AI settings are owner-only under RLS).
+export async function readCompanyPublicAiSettings(creedId: string): Promise<PublicAiSettings> {
+  const admin = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
+  const { data } = await admin
+    .from("creed_company_ai_settings")
+    .select("ai_mode, key_status, api_key_last_four")
+    .eq("creed_id", creedId)
+    .maybeSingle();
+  const row = (data as CompanyAiSettingsRow | null) ?? null;
+  return {
+    provider: "openrouter",
+    keyStatus: row?.key_status === "present" ? "valid" : "missing",
+    aiMode: row?.ai_mode ?? "credits",
+    keyLastFour: row?.api_key_last_four ?? undefined,
+  };
 }
 
 export async function upsertAiSettings({
@@ -183,6 +210,7 @@ async function validateOpenRouterKey(apiKey: string) {
 export async function recordAiUsage({
   client,
   userId,
+  creedId,
   feature,
   modelId,
   modelQuality,
@@ -194,6 +222,10 @@ export async function recordAiUsage({
 }: {
   client: unknown;
   userId: string;
+  // The Creed the spend belongs to. Set to the company Creed id for company AI
+  // so the company spend chart (readCompanyAiUsageSummary) can attribute it;
+  // left null for personal usage (read by user_id), preserving personal charts.
+  creedId?: string | null;
   feature: string;
   modelId: string;
   modelQuality: AiModelQuality;
@@ -211,6 +243,7 @@ export async function recordAiUsage({
   const { error } = await db.from("creed_ai_usage").insert({
     id: `ai_${Date.now().toString(36)}_${randomBytes(5).toString("hex")}`,
     user_id: userId,
+    creed_id: creedId ?? null,
     feature,
     provider: "openrouter",
     model_id: modelId,
@@ -232,6 +265,15 @@ export function getRangeStart(range: AiUsageRange) {
   return new Date(now - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+type UsageRow = {
+  feature: string;
+  charged_micro_usd: number | string | null;
+  estimated_cost_usd: number | string;
+  input_tokens: number;
+  output_tokens: number;
+  created_at: string;
+};
+
 export async function readAiUsageSummary(
   client: unknown,
   userId: string,
@@ -248,17 +290,33 @@ export async function readAiUsageSummary(
     .order("created_at", { ascending: true });
 
   assertNoError(error, "Could not load AI usage.");
+  return foldUsageRows((data as UsageRow[] | null) ?? [], range);
+}
 
-  const rows =
-    (data as Array<{
-      feature: string;
-      charged_micro_usd: number | string | null;
-      estimated_cost_usd: number | string;
-      input_tokens: number;
-      output_tokens: number;
-      created_at: string;
-    }> | null) ?? [];
+// The company spend chart, keyed by creed_id (company usage is stamped with the
+// company Creed id by recordAiUsage). Read via the admin client since company AI
+// usage is visible to every member. Owner-only detail lives in the credit
+// history ledger, not this aggregate chart. Mirrors the personal summary exactly
+// so the same UsageCard renders it.
+export async function readCompanyAiUsageSummary(
+  creedId: string,
+  range: AiUsageRange,
+  mode: AiMode
+) {
+  const admin = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
+  const { data, error } = await admin
+    .from("creed_ai_usage")
+    .select("feature, charged_micro_usd, estimated_cost_usd, input_tokens, output_tokens, created_at")
+    .eq("creed_id", creedId)
+    .eq("ai_mode", mode)
+    .gte("created_at", getRangeStart(range))
+    .order("created_at", { ascending: true });
 
+  assertNoError(error, "Could not load AI usage.");
+  return foldUsageRows((data as UsageRow[] | null) ?? [], range);
+}
+
+function foldUsageRows(rows: UsageRow[], range: AiUsageRange): AiUsageSummary {
   const summary: AiUsageSummary = {
     range,
     totalCostUsd: 0,

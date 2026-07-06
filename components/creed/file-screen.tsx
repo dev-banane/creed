@@ -10,7 +10,13 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, Reorder, motion, useDragControls } from "framer-motion";
+import Image from "next/image";
+import {
+  AnimatePresence,
+  Reorder,
+  motion,
+  useDragControls,
+} from "framer-motion";
 import {
   AlertTriangle,
   Check,
@@ -19,6 +25,7 @@ import {
   Ellipsis,
   LoaderCircle,
   Plus,
+  Send,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -36,10 +43,12 @@ import { FolderUpIcon } from "@/components/ui/folder-up";
 import { GripVerticalIcon } from "@/components/ui/grip-vertical";
 import { HistoryIcon } from "@/components/ui/history";
 import { LockIcon, type LockIconHandle } from "@/components/ui/lock";
-import { LockOpenIcon, type LockOpenIconHandle } from "@/components/ui/lock-open";
+import {
+  LockOpenIcon,
+  type LockOpenIconHandle,
+} from "@/components/ui/lock-open";
 import { SquarePenIcon } from "@/components/ui/square-pen";
 import { StampIcon, type StampIconHandle } from "@/components/ui/stamp";
-import { FileStackIcon } from "@/components/ui/file-stack";
 import { AnimatedMenuIconItem } from "@/components/creed/animated-icon-action";
 import { useAnimatedIconControls } from "@/components/creed/animated-icon-controls";
 import {
@@ -60,6 +69,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SimpleTooltip } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentIconStack } from "@/components/creed/agent-icon-stack";
@@ -91,8 +101,12 @@ import {
   summarizeDiff,
 } from "@/components/creed/inline-proposal-diff";
 import { ReviewPill } from "@/components/creed/review-pill";
-import { useCreedShellFileActions, useCreedShellActiveSection } from "@/components/creed/shell";
+import {
+  useCreedShellFileActions,
+  useCreedShellActiveSection,
+} from "@/components/creed/shell";
 import { useCreed } from "@/components/creed/creed-provider";
+import { CreedSwitcher } from "@/components/creed/creed-switcher";
 import { parseCreedMarkdown } from "@/lib/creed-markdown";
 import {
   accentColorMap,
@@ -103,15 +117,21 @@ import {
   normalizeLegacyProposalDraft,
   normalizeProposalForSection,
   sectionSuggestions,
+  sectionToMarkdown,
   type AccentKey,
   type ActivityEntry,
   type ActivityStatus,
   type CreedSection,
   type Proposal,
 } from "@/lib/creed-data";
+import { richTextContentEquivalent } from "@/lib/rich-text";
+import { canProposeToSection, resolveSectionPermission } from "@/lib/creed-permissions";
 import { cn } from "@/lib/utils";
 
-const activityStatuses: Array<{ label: string; value: "all" | ActivityStatus }> = [
+const activityStatuses: Array<{
+  label: string;
+  value: "all" | ActivityStatus;
+}> = [
   { label: "All", value: "all" },
   { label: "Direct", value: "direct" },
   { label: "Accepted", value: "accepted" },
@@ -137,7 +157,7 @@ const QUALITY_FINGERPRINT_IGNORED_KEYS = new Set([
 
 function qualityFingerprint(value: unknown) {
   return JSON.stringify(value, (key, nestedValue) =>
-    QUALITY_FINGERPRINT_IGNORED_KEYS.has(key) ? undefined : nestedValue
+    QUALITY_FINGERPRINT_IGNORED_KEYS.has(key) ? undefined : nestedValue,
   );
 }
 
@@ -230,7 +250,7 @@ function ActivityFilterPill({
         "rounded-md border px-3 py-1.5 text-[12px] font-medium outline-none transition-colors focus:outline-none focus-visible:outline-none",
         active
           ? activeClass
-          : "border-[var(--creed-border)] bg-[var(--creed-surface)] text-[var(--creed-text-secondary)] hover:border-[var(--creed-border-strong)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+          : "border-[var(--creed-border)] bg-[var(--creed-surface)] text-[var(--creed-text-secondary)] hover:border-[var(--creed-border-strong)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]",
       )}
     >
       {children}
@@ -276,10 +296,9 @@ function uniqueAgentNames(names: Array<string | undefined | null>) {
   });
 }
 
-
 function resolveSectionAccent(
   summarySection: { id: string; name: string; accent: AccentKey },
-  sections: CreedSection[]
+  sections: CreedSection[],
 ) {
   const byId = sections.find((section) => section.id === summarySection.id);
   if (byId) {
@@ -287,7 +306,9 @@ function resolveSectionAccent(
   }
 
   const normalizedName = summarySection.name.trim().toLowerCase();
-  const byName = sections.find((section) => section.name.trim().toLowerCase() === normalizedName);
+  const byName = sections.find(
+    (section) => section.name.trim().toLowerCase() === normalizedName,
+  );
   if (byName) {
     return byName.accent;
   }
@@ -297,7 +318,12 @@ function resolveSectionAccent(
 
 type SectionChangeKind = "added" | "removed" | "modified";
 
-type SectionLike = { id: string; name: string; accent: AccentKey; content: string };
+type SectionLike = {
+  id: string;
+  name: string;
+  accent: AccentKey;
+  content: string;
+};
 
 type SectionChange = {
   id: string;
@@ -315,7 +341,9 @@ function matchSection(section: SectionLike, pool: SectionLike[]) {
     return byId;
   }
   const normalized = section.name.trim().toLowerCase();
-  return pool.find((candidate) => candidate.name.trim().toLowerCase() === normalized);
+  return pool.find(
+    (candidate) => candidate.name.trim().toLowerCase() === normalized,
+  );
 }
 
 // Diff two section sets into add / remove / modify rows. `before` is the
@@ -325,7 +353,7 @@ function matchSection(section: SectionLike, pool: SectionLike[]) {
 function computeSectionChanges(
   before: SectionLike[],
   after: SectionLike[],
-  localSections: CreedSection[]
+  localSections: CreedSection[],
 ): SectionChange[] {
   const changes: SectionChange[] = [];
   const consumedBeforeIds = new Set<string>();
@@ -374,7 +402,13 @@ function computeSectionChanges(
 
 // Smooth height + fade reveal, shared by every change row. Eases out (expo) so
 // the dropdown glides open rather than snapping.
-function SmoothExpand({ open, children }: { open: boolean; children: ReactNode }) {
+function SmoothExpand({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: ReactNode;
+}) {
   return (
     <AnimatePresence initial={false}>
       {open ? (
@@ -412,7 +446,7 @@ function SectionChangeRow({ change }: { change: SectionChange }) {
       kind === "modified"
         ? computeDiffParts(change.existingContent, change.nextContent)
         : [],
-    [kind, change.existingContent, change.nextContent]
+    [kind, change.existingContent, change.nextContent],
   );
   const stats = useMemo(() => summarizeDiff(parts), [parts]);
 
@@ -428,7 +462,12 @@ function SectionChangeRow({ change }: { change: SectionChange }) {
     const dividerClass = added ? "border-[#10b981]/20" : "border-[#dc2626]/20";
 
     return (
-      <div className={cn("overflow-hidden rounded-xl border border-dashed", containerClass)}>
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border border-dashed",
+          containerClass,
+        )}
+      >
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
@@ -442,14 +481,20 @@ function SectionChangeRow({ change }: { change: SectionChange }) {
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-[7px] bg-[var(--creed-surface)] px-2 py-1 text-[11px] font-medium",
-                toneClass
+                toneClass,
               )}
             >
-              <span className="font-mono leading-none">{added ? "+" : "−"}</span>
+              <span className="font-mono leading-none">
+                {added ? "+" : "−"}
+              </span>
               {added ? "Added" : "Removed"}
             </span>
             <ChevronDown
-              className={cn(CHEVRON_CLASS, toneClass, expanded ? "rotate-0" : "-rotate-90")}
+              className={cn(
+                CHEVRON_CLASS,
+                toneClass,
+                expanded ? "rotate-0" : "-rotate-90",
+              )}
             />
           </span>
         </button>
@@ -468,14 +513,20 @@ function SectionChangeRow({ change }: { change: SectionChange }) {
   return (
     // Modified: one accent-tinted block where the header and the expanded
     // dropdown share the same section tint as a continuation.
-    <div className="overflow-hidden rounded-xl" style={{ backgroundColor: accentTintMap[accent] }}>
+    <div
+      className="overflow-hidden rounded-xl"
+      style={{ backgroundColor: accentTintMap[accent] }}
+    >
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
         className="flex w-full items-center justify-between gap-3 px-3.5 py-2 text-left"
         aria-expanded={expanded}
       >
-        <span className="truncate text-[14px] font-medium" style={{ color: accentColorMap[accent] }}>
+        <span
+          className="truncate text-[14px] font-medium"
+          style={{ color: accentColorMap[accent] }}
+        >
           {name}
         </span>
         <span className="flex shrink-0 items-center gap-2.5">
@@ -498,7 +549,9 @@ function SectionChangeRow({ change }: { change: SectionChange }) {
         <div className="px-2 pb-2">
           <div className="creed-diff-block rounded-[10px] bg-[var(--creed-surface)] px-3.5 py-3">
             {unchanged ? (
-              <span className="text-[var(--creed-text-tertiary)]">No textual change</span>
+              <span className="text-[var(--creed-text-tertiary)]">
+                No textual change
+              </span>
             ) : (
               parts.map((part, index) => {
                 if (part.added) {
@@ -559,7 +612,9 @@ function SectionChangeList({
               animate="visible"
               variants={{
                 hidden: {},
-                visible: { transition: { staggerChildren: 0.08, delayChildren: 0.16 } },
+                visible: {
+                  transition: { staggerChildren: 0.08, delayChildren: 0.16 },
+                },
               }}
             >
               {changes.map((change) => (
@@ -629,7 +684,8 @@ function SaveStatus({
   // Same icon + animation as the activity button (HistoryIcon driven by
   // useAnimatedIconControls), but fired by a save starting instead of a hover.
   // start() plays the full animation once and the hook auto-settles it.
-  const { iconRef: saveIconRef, start: startSaveIcon } = useAnimatedIconControls();
+  const { iconRef: saveIconRef, start: startSaveIcon } =
+    useAnimatedIconControls();
   const wasSavingRef = useRef(saving);
   useEffect(() => {
     if (saving && !wasSavingRef.current) {
@@ -668,12 +724,12 @@ export function FileScreen() {
     toggleLock,
     toggleSectionLock,
     updateRichTextSection,
+    fileProposalEdit,
     reorderSections,
     addSection,
     addSectionAfter,
     renameSection,
     setSectionAccent,
-    duplicateSection,
     deleteSection,
     archiveSection,
     archiveCreed,
@@ -681,19 +737,35 @@ export function FileScreen() {
     acceptProposal,
     acceptProposals,
     rejectProposal,
+    withdrawProposal,
     importSections,
     exportMarkdown,
     refreshState,
   } = useCreed();
+  // Company role gates. In personal mode the sole user is effectively the owner.
+  // Managers (owner/admin) create sections; plain members cannot. Section
+  // creation is owner/admin-only to keep the shared file's shape managed.
+  const companyRole =
+    state.creedType === "company" ? state.company?.myRole : undefined;
+  const isCompanyManager = companyRole === "owner" || companyRole === "admin";
+  const canCreateSections = state.creedType !== "company" || isCompanyManager;
+  // Reordering (drag) is owner/admin-only in company mode - members can't drag.
+  const canReorderSections = state.creedType !== "company" || isCompanyManager;
+  // Analysis runs: owners/admins can trigger a full-file analysis; members can
+  // only refresh individual sections they have propose or direct access to.
+  const canRunQuality = state.creedType !== "company" || isCompanyManager;
+  // All non-frozen members can SEE quality scores (the shared report is loaded
+  // as a baseline for everyone). This controls ring display, not the refresh button.
+  const canSeeQuality = state.creedType !== "company" || state.company?.accessState !== "frozen";
   // Archived sections stay in state (so they persist) but are hidden from the
   // editor; the section list renders from this live set.
   const visibleSections = useMemo(
     () => state.sections.filter((section) => !section.archived),
-    [state.sections]
+    [state.sections],
   );
   const pendingProposals = useMemo(
     () => state.proposals.filter((proposal) => proposal.status === "pending"),
-    [state.proposals]
+    [state.proposals],
   );
   const normalizedPendingProposals = useMemo(
     () =>
@@ -703,10 +775,10 @@ export function FileScreen() {
             ...proposal,
             draft: normalizeLegacyProposalDraft(proposal.draft),
           },
-          state.sections.find((section) => section.id === proposal.sectionId)
-        )
+          state.sections.find((section) => section.id === proposal.sectionId),
+        ),
       ),
-    [pendingProposals, state.sections]
+    [pendingProposals, state.sections],
   );
   const [activityOpen, setActivityOpen] = useState(false);
 
@@ -718,14 +790,16 @@ export function FileScreen() {
     function isEditable(target: EventTarget | null): boolean {
       if (!(target instanceof HTMLElement)) return false;
       const tag = target.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
+        return true;
       if (target.isContentEditable) return true;
       return false;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "a" && event.key !== "A") return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
       if (event.isComposing || event.repeat || event.defaultPrevented) return;
       if (isEditable(event.target)) return;
       event.preventDefault();
@@ -738,7 +812,7 @@ export function FileScreen() {
   const qualitySnapshot = useSyncExternalStore(
     subscribeQualityRunner,
     getQualityRunnerSnapshot,
-    getQualityRunnerServerSnapshot
+    getQualityRunnerServerSnapshot,
   );
   const qualityReport = qualitySnapshot.report;
   const qualityLoading = qualitySnapshot.fullRunning;
@@ -746,13 +820,12 @@ export function FileScreen() {
     const first = qualitySnapshot.sectionRunning.values().next();
     return first.done ? null : first.value;
   }, [qualitySnapshot.sectionRunning]);
-  const [qualityNotice, setQualityNotice] = useState<string | null>(qualitySnapshot.error);
   const [qualityEnabled, setQualityEnabled] = useState(false);
-  useEffect(() => {
-    if (qualitySnapshot.error) setQualityNotice(qualitySnapshot.error);
-  }, [qualitySnapshot.error]);
-  const [analyzedFullFingerprint, setAnalyzedFullFingerprint] = useState<string | null>(null);
-  const [analyzedSectionFingerprints, setAnalyzedSectionFingerprints] = useState<Record<string, string>>({});
+  const [analyzedFullFingerprint, setAnalyzedFullFingerprint] = useState<
+    string | null
+  >(null);
+  const [analyzedSectionFingerprints, setAnalyzedSectionFingerprints] =
+    useState<Record<string, string>>({});
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerName, setComposerName] = useState("");
   const [composerStarter, setComposerStarter] = useState<string | undefined>();
@@ -765,8 +838,11 @@ export function FileScreen() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pullBusy, setPullBusy] = useState(false);
   const [versionStatusBusy, setVersionStatusBusy] = useState(false);
-  const [versionStatus, setVersionStatus] = useState<GitHubVersionStatus | null>(null);
-  const [pullPreview, setPullPreview] = useState<GitHubPullPreview | null>(null);
+  const [versionStatus, setVersionStatus] =
+    useState<GitHubVersionStatus | null>(null);
+  const [pullPreview, setPullPreview] = useState<GitHubPullPreview | null>(
+    null,
+  );
   const [pullPreviewRenderKey, setPullPreviewRenderKey] = useState(0);
   const [showPullPreview, setShowPullPreview] = useState(false);
   const [pushPreview, setPushPreview] = useState<{
@@ -776,7 +852,9 @@ export function FileScreen() {
   const [pushPreviewRenderKey, setPushPreviewRenderKey] = useState(0);
   const [showPushPreview, setShowPushPreview] = useState(false);
   const [pushPreviewBusy, setPushPreviewBusy] = useState(false);
-  const [selectedVersionAction, setSelectedVersionAction] = useState<"push" | "pull">("push");
+  const [selectedVersionAction, setSelectedVersionAction] = useState<
+    "push" | "pull"
+  >("push");
   const [renameSectionState, setRenameSectionState] = useState<{
     id: string;
     name: string;
@@ -787,13 +865,27 @@ export function FileScreen() {
   } | null>(null);
   const [deleteFileOpen, setDeleteFileOpen] = useState(false);
   const [archiveAllOpen, setArchiveAllOpen] = useState(false);
+  // "Edit" a pending proposal from the top ReviewPill: hand the section its
+  // draft content to re-open (the section consumes it into its local editor
+  // draft). Keyed by section id so only the target section picks it up.
+  const [reopenDraft, setReopenDraft] = useState<{
+    sectionId: string;
+    content: string;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const editorScrollRef = useRef<HTMLDivElement | null>(null);
   const composerAreaRef = useRef<HTMLDivElement | null>(null);
   const qualityBaselineLoadedRef = useRef(false);
+  // Tracks which Creed the quality state belongs to, so a Creed switch can drop
+  // the previous Creed's report (the runner store is module-global).
+  const qualityCreedRef = useRef(state.creedId);
   const currentFullFingerprintRef = useRef<string | null>(null);
   const sectionFingerprintByIdRef = useRef<Map<string, string>>(new Map());
+  // Latest sections, for the company baseline re-fetch (keeps that effect off
+  // the per-edit dependency churn while still reading the current file).
+  const sectionsRef = useRef(state.sections);
+  sectionsRef.current = state.sections;
   const versionIcon = useAnimatedIconControls();
   const activityIcon = useAnimatedIconControls();
   // `exportMarkdown` is re-created by the provider whenever state changes,
@@ -801,32 +893,96 @@ export function FileScreen() {
   // separately would be redundant.
   const localMarkdown = useMemo(() => exportMarkdown(), [exportMarkdown]);
   const sectionQualityById = useMemo(
-    () => new Map((qualityReport?.sections ?? []).map((section) => [section.sectionId, section])),
-    [qualityReport]
+    () =>
+      new Map(
+        (qualityReport?.sections ?? []).map((section) => [
+          section.sectionId,
+          section,
+        ]),
+      ),
+    [qualityReport],
   );
   const currentFullFingerprint = useMemo(
     () => qualityFingerprint(state.sections),
-    [state.sections]
+    [state.sections],
   );
   const sectionFingerprintById = useMemo(
     () =>
       new Map(
-        state.sections.map((section) => [section.id, qualityFingerprint(section)] as const)
+        state.sections.map(
+          (section) => [section.id, qualityFingerprint(section)] as const,
+        ),
       ),
-    [state.sections]
+    [state.sections],
   );
   const qualityHasReport = Boolean(qualityReport);
   const fullQualityDirty =
     qualityEnabled &&
     state.sections.length > 0 &&
     qualityHasReport &&
-    (!analyzedFullFingerprint || analyzedFullFingerprint !== currentFullFingerprint);
-  const qualityCanRunInitialAnalysis = qualityEnabled && state.sections.length > 0 && !qualityHasReport;
+    (!analyzedFullFingerprint ||
+      analyzedFullFingerprint !== currentFullFingerprint);
+  const qualityCanRunInitialAnalysis =
+    qualityEnabled && state.sections.length > 0 && !qualityHasReport;
 
   useEffect(() => {
     currentFullFingerprintRef.current = currentFullFingerprint;
     sectionFingerprintByIdRef.current = sectionFingerprintById;
   }, [currentFullFingerprint, sectionFingerprintById]);
+
+  // Record a read-only baseline payload into the report + drift fingerprints.
+  // Shared by the initial baseline load and the company sync so both stamp the
+  // analyzed fingerprints identically - a section is "dirty" (shows the refresh
+  // button) only when its content changed since it was scored, never just
+  // because the report was (re)loaded. Any writer that sets the report WITHOUT
+  // these fingerprints would make every scored section look dirty.
+  const applyBaselinePayload = useCallback(
+    (
+      payload: Awaited<ReturnType<typeof runFullQuality>>,
+      sectionsSnapshot: CreedSection[],
+      fingerprintSnapshot: string,
+    ) => {
+      if (!payload.report) return;
+      setBaselineReport(payload.report);
+      setAnalyzedFullFingerprint(
+        payload.current
+          ? fingerprintSnapshot
+          : `stored:${payload.storedContentHash ?? payload.report.contentHash}`,
+      );
+      setAnalyzedSectionFingerprints(
+        Object.fromEntries(
+          sectionsSnapshot.flatMap((section) => {
+            const currentSectionFingerprint = qualityFingerprint(section);
+            const storedSectionHash = payload.storedSectionHashes?.[section.id];
+            const currentSectionHash = payload.sectionHashes?.[section.id];
+            const hasLegacySectionReport = payload.report?.sections.some(
+              (sectionReport) => sectionReport.sectionId === section.id,
+            );
+
+            if (
+              payload.current ||
+              (storedSectionHash && storedSectionHash === currentSectionHash)
+            ) {
+              return [[section.id, currentSectionFingerprint] as const];
+            }
+            if (storedSectionHash) {
+              return [[section.id, `stored:${storedSectionHash}`] as const];
+            }
+            if (hasLegacySectionReport) {
+              return [
+                [
+                  section.id,
+                  `stored:legacy:${payload.storedContentHash ?? payload.report?.contentHash ?? "unknown"}:${section.id}`,
+                ] as const,
+              ];
+            }
+            return [];
+          }),
+        ),
+      );
+    },
+    [],
+  );
   const githubConfigured =
     state.settings.integrations.github.status === "connected" &&
     Boolean(state.settings.versionControl.repoOwner) &&
@@ -846,7 +1002,8 @@ export function FileScreen() {
   // so the dialog shows the true current state of the remote.
   const pullDisabled = !githubConfigured || versionStatusBusy;
   const primaryVersionAction =
-    versionStatus?.syncStatus === "remote-ahead" || versionStatus?.syncStatus === "diverged"
+    versionStatus?.syncStatus === "remote-ahead" ||
+    versionStatus?.syncStatus === "diverged"
       ? "pull"
       : "push";
 
@@ -877,18 +1034,28 @@ export function FileScreen() {
 
       try {
         setVersionStatusBusy(true);
-        const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(localMarkdown));
+        const buffer = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(localMarkdown),
+        );
         const localHash = Array.from(new Uint8Array(buffer))
           .map((value) => value.toString(16).padStart(2, "0"))
           .join("");
-        const response = await fetch(`/api/app/github/status?localHash=${localHash}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as GitHubVersionStatus & { error?: string };
+        const response = await fetch(
+          `/api/app/github/status?localHash=${localHash}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json()) as GitHubVersionStatus & {
+          error?: string;
+        };
 
         if (!response.ok) {
-          throw new Error(payload?.error || "Could not load GitHub version status");
+          throw new Error(
+            payload?.error || "Could not load GitHub version status",
+          );
         }
 
         if (!cancelled) {
@@ -897,7 +1064,9 @@ export function FileScreen() {
       } catch (error) {
         if (!cancelled) {
           toast.error(
-            error instanceof Error ? error.message : "Could not load GitHub version status"
+            error instanceof Error
+              ? error.message
+              : "Could not load GitHub version status",
           );
         }
       } finally {
@@ -934,12 +1103,18 @@ export function FileScreen() {
           return;
         }
         const payload = (await response.json()) as {
-          settings?: { keyStatus?: "missing" | "valid" | "invalid" };
+          settings?: {
+            keyStatus?: "missing" | "valid" | "invalid";
+            aiMode?: "credits" | "byok";
+          };
         };
         if (!cancelled) {
-          const enabled = payload.settings?.keyStatus === "valid";
+          const mode = payload.settings?.aiMode ?? "credits";
+          const keyOk = payload.settings?.keyStatus === "valid";
+          // BYOK needs a valid key; credits mode is always enabled (the actual
+          // credit balance check happens at analysis time on the server).
+          const enabled = mode === "byok" ? keyOk : true;
           setQualityEnabled(enabled);
-          setQualityNotice(enabled ? null : "Add an API key in Settings to enable quality analysis.");
         }
       } catch {
         if (!cancelled) {
@@ -968,10 +1143,29 @@ export function FileScreen() {
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+    // Re-check per Creed: the AI-key gate is creed-scoped (a company owner's key
+    // differs from their personal one), so readiness must be recomputed on switch.
+  }, [state.creedId]);
+
+  // A Creed switch keeps this component mounted while the module-global quality
+  // runner still holds the previous Creed's report. Drop that report + the
+  // analyzed baselines so scores never bleed across Creeds (e.g. a personal
+  // report showing on an empty company Creed).
+  useEffect(() => {
+    if (qualityCreedRef.current === state.creedId) return;
+    qualityCreedRef.current = state.creedId;
+    setBaselineReport(null);
+    qualityBaselineLoadedRef.current = false;
+    setAnalyzedFullFingerprint(null);
+    setAnalyzedSectionFingerprints({});
+  }, [state.creedId]);
 
   useEffect(() => {
-    if (!qualityEnabled || state.sections.length === 0 || qualityBaselineLoadedRef.current) {
+    if (
+      !qualityEnabled ||
+      state.sections.length === 0 ||
+      qualityBaselineLoadedRef.current
+    ) {
       return;
     }
 
@@ -1007,49 +1201,10 @@ export function FileScreen() {
           return;
         }
 
-        setBaselineReport(payload.report);
-        setAnalyzedFullFingerprint(
-          payload.current
-            ? fingerprintSnapshot
-            : `stored:${payload.storedContentHash ?? payload.report.contentHash}`
-        );
-        setAnalyzedSectionFingerprints(
-          Object.fromEntries(
-            sectionsSnapshot.flatMap((section) => {
-              const currentSectionFingerprint = qualityFingerprint(section);
-              const storedSectionHash = payload.storedSectionHashes?.[section.id];
-              const currentSectionHash = payload.sectionHashes?.[section.id];
-              const hasLegacySectionReport = payload.report?.sections.some(
-                (sectionReport) => sectionReport.sectionId === section.id
-              );
-
-              if (payload.current || (storedSectionHash && storedSectionHash === currentSectionHash)) {
-                return [[section.id, currentSectionFingerprint] as const];
-              }
-
-              if (storedSectionHash) {
-                return [[section.id, `stored:${storedSectionHash}`] as const];
-              }
-
-              if (hasLegacySectionReport) {
-                return [
-                  [
-                    section.id,
-                    `stored:legacy:${payload.storedContentHash ?? payload.report?.contentHash ?? "unknown"}:${section.id}`,
-                  ] as const,
-                ];
-              }
-
-              return [];
-            })
-          )
-        );
-      } catch (error) {
+        applyBaselinePayload(payload, sectionsSnapshot, fingerprintSnapshot);
+      } catch {
         if (!cancelled) {
           qualityBaselineLoadedRef.current = false;
-          setQualityNotice(
-            error instanceof Error ? error.message : "Could not load the latest quality analysis."
-          );
         }
       }
     }
@@ -1059,26 +1214,82 @@ export function FileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [currentFullFingerprint, qualityEnabled, qualityReport, state.sections]);
+  }, [currentFullFingerprint, qualityEnabled, qualityReport, state.sections, applyBaselinePayload]);
+
+  // Company mode: the report is shared, so another member's (or the owner's)
+  // analysis needs to reach everyone else without a manual refresh. Re-read the
+  // baseline on a light interval and on tab focus. Personal mode is single-user,
+  // so it never runs this. Uses sectionsRef to read the current file without
+  // re-arming the interval on every keystroke.
+  useEffect(() => {
+    if (state.creedType !== "company" || !qualityEnabled) return;
+    let cancelled = false;
+    async function syncSharedReport() {
+      try {
+        const payload = await runFullQuality({
+          sections: sectionsRef.current,
+          fingerprint: `baseline:${currentFullFingerprintRef.current ?? ""}`,
+          readOnly: true,
+        });
+        // Record through the shared path so the drift fingerprints are stamped
+        // too - otherwise a refreshed report with no fingerprints makes every
+        // scored section look dirty.
+        if (!cancelled) {
+          applyBaselinePayload(
+            payload,
+            sectionsRef.current,
+            currentFullFingerprintRef.current ?? "",
+          );
+        }
+      } catch {
+        // A transient read failure just leaves the current report in place.
+      }
+    }
+    const interval = window.setInterval(() => void syncSharedReport(), 20000);
+    const onFocus = () => void syncSharedReport();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [state.creedType, qualityEnabled, applyBaselinePayload]);
 
   async function refreshFullQuality() {
-    if (!qualityEnabled || qualityLoading || state.sections.length === 0) {
+    if (!qualityEnabled || !canRunQuality || qualityLoading || state.sections.length === 0) {
       return;
     }
 
-    setQualityNotice(null);
     const sectionFingerprints = Object.fromEntries(
-      state.sections.map((section) => [section.id, qualityFingerprint(section)])
+      state.sections.map((section) => [
+        section.id,
+        qualityFingerprint(section),
+      ]),
     );
+
+    // Members can only analyse sections they have propose or direct access to.
+    const myPermissions = state.company?.myPermissions;
+    const isMember = state.creedType === "company" && !isCompanyManager;
+    const sectionsToSend = isMember
+      ? state.sections.filter((section) => {
+          const permission = resolveSectionPermission("member", myPermissions?.[section.id]);
+          return canProposeToSection(permission);
+        })
+      : state.sections;
+
+    if (sectionsToSend.length === 0) {
+      return;
+    }
 
     try {
       // One whole-file pass. The server re-scores only the sections that
       // drifted since the last analysis, carries the rest forward, and
       // recomputes the overall - so a single call does what the old
       // stale-section fan-out did, without the redundant per-section requests.
-      const fingerprint = currentFullFingerprintRef.current ?? currentFullFingerprint;
+      const fingerprint =
+        currentFullFingerprintRef.current ?? currentFullFingerprint;
       const payload = await runFullQuality({
-        sections: state.sections,
+        sections: sectionsToSend,
         fingerprint: `full:${fingerprint}`,
         force: true,
       });
@@ -1087,17 +1298,17 @@ export function FileScreen() {
         setAnalyzedFullFingerprint(fingerprint);
         setAnalyzedSectionFingerprints(
           Object.fromEntries(
-            state.sections.map((section) => [
+            sectionsToSend.map((section) => [
               section.id,
-              sectionFingerprintByIdRef.current.get(section.id) ?? sectionFingerprints[section.id],
-            ])
-          )
+              sectionFingerprintByIdRef.current.get(section.id) ??
+                sectionFingerprints[section.id],
+            ]),
+          ),
         );
       }
     } catch {
       // Full-analysis failures surface as a toast via the shell QualityToasts
-      // subscriber; just clear any stale inline notice here.
-      setQualityNotice(null);
+      // subscriber.
     }
   }
 
@@ -1106,10 +1317,20 @@ export function FileScreen() {
       return;
     }
 
-    setQualityNotice(null);
+    // Members can only analyse sections they have propose or direct access to.
+    const myPermissions = state.company?.myPermissions;
+    const isMember = state.creedType === "company" && !isCompanyManager;
+    if (isMember) {
+      const permission = resolveSectionPermission("member", myPermissions?.[section.id]);
+      if (!canProposeToSection(permission)) {
+        return;
+      }
+    }
+
     try {
       const sectionFingerprint =
-        sectionFingerprintByIdRef.current.get(section.id) ?? qualityFingerprint(section);
+        sectionFingerprintByIdRef.current.get(section.id) ??
+        qualityFingerprint(section);
       const nextSectionReport = await runSectionQuality({
         sections: state.sections,
         section,
@@ -1123,8 +1344,7 @@ export function FileScreen() {
       }
     } catch {
       // The failure surfaces as a toast via the shell QualityToasts subscriber
-      // (the runner records the outcome); just clear any stale inline notice.
-      setQualityNotice(null);
+      // (the runner records the outcome).
     }
   }
 
@@ -1135,21 +1355,24 @@ export function FileScreen() {
     setComposerStarter(undefined);
   }, []);
 
-  const scrollComposerIntoView = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const container = editorScrollRef.current;
-    const composerArea = composerAreaRef.current;
+  const scrollComposerIntoView = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const container = editorScrollRef.current;
+      const composerArea = composerAreaRef.current;
 
-    if (!container || !composerArea) {
-      return false;
-    }
+      if (!container || !composerArea) {
+        return false;
+      }
 
-    container.scrollTo({
-      top: Math.max(composerArea.offsetTop - 24, 0),
-      behavior,
-    });
+      container.scrollTo({
+        top: Math.max(composerArea.offsetTop - 24, 0),
+        behavior,
+      });
 
-    return true;
-  }, []);
+      return true;
+    },
+    [],
+  );
 
   const openComposerAndReveal = useCallback(
     (afterSectionId?: string) => {
@@ -1159,7 +1382,7 @@ export function FileScreen() {
         scrollComposerIntoView("smooth");
       }, 60);
     },
-    [openComposer, scrollComposerIntoView]
+    [openComposer, scrollComposerIntoView],
   );
 
   function submitComposer() {
@@ -1210,7 +1433,9 @@ export function FileScreen() {
       const parsed = parseCreedMarkdown(markdown);
 
       if (parsed.sections.length === 0) {
-        throw new Error(parsed.warnings[0] ?? "Could not import this markdown file");
+        throw new Error(
+          parsed.warnings[0] ?? "Could not import this markdown file",
+        );
       }
 
       await importSections(parsed.sections);
@@ -1222,7 +1447,9 @@ export function FileScreen() {
       markActionComplete("import");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not import this markdown file"
+        error instanceof Error
+          ? error.message
+          : "Could not import this markdown file",
       );
     } finally {
       setImportBusy(false);
@@ -1244,7 +1471,10 @@ export function FileScreen() {
 
     try {
       setPushPreviewBusy(true);
-      const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(localMarkdown));
+      const buffer = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(localMarkdown),
+      );
       const localHash = Array.from(new Uint8Array(buffer))
         .map((value) => value.toString(16).padStart(2, "0"))
         .join("");
@@ -1263,17 +1493,24 @@ export function FileScreen() {
         return;
       }
 
-      const payload = (await response.json()) as GitHubPullPreview & { error?: string };
+      const payload = (await response.json()) as GitHubPullPreview & {
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(payload?.error || "Could not preview the push");
       }
 
-      setPushPreview({ sections: payload.sections, warnings: payload.warnings ?? [] });
+      setPushPreview({
+        sections: payload.sections,
+        warnings: payload.warnings ?? [],
+      });
       setPushPreviewRenderKey((current) => current + 1);
     } catch (error) {
       // Leave the dialog open so the user can still push; just surface why the
       // preview is missing.
-      toast.error(error instanceof Error ? error.message : "Could not preview the push");
+      toast.error(
+        error instanceof Error ? error.message : "Could not preview the push",
+      );
     } finally {
       setPushPreviewBusy(false);
     }
@@ -1283,7 +1520,10 @@ export function FileScreen() {
     try {
       setSelectedVersionAction("push");
       setPushBusy(true);
-      const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(localMarkdown));
+      const buffer = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(localMarkdown),
+      );
       const localHash = Array.from(new Uint8Array(buffer))
         .map((value) => value.toString(16).padStart(2, "0"))
         .join("");
@@ -1308,7 +1548,9 @@ export function FileScreen() {
       toast.success("Pushed Creed to GitHub");
       setPushDialogOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not push Creed");
+      toast.error(
+        error instanceof Error ? error.message : "Could not push Creed",
+      );
     } finally {
       setPushBusy(false);
     }
@@ -1321,7 +1563,10 @@ export function FileScreen() {
       setPullDialogOpen(true);
       setPullPreview(null);
 
-      const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(localMarkdown));
+      const buffer = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(localMarkdown),
+      );
       const localHash = Array.from(new Uint8Array(buffer))
         .map((value) => value.toString(16).padStart(2, "0"))
         .join("");
@@ -1333,7 +1578,9 @@ export function FileScreen() {
         },
         body: JSON.stringify({ localHash }),
       });
-      const payload = (await response.json()) as GitHubPullPreview & { error?: string };
+      const payload = (await response.json()) as GitHubPullPreview & {
+        error?: string;
+      };
 
       if (!response.ok) {
         throw new Error(payload?.error || "Could not preview GitHub import");
@@ -1343,7 +1590,9 @@ export function FileScreen() {
       setPullPreviewRenderKey((current) => current + 1);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not preview GitHub import"
+        error instanceof Error
+          ? error.message
+          : "Could not preview GitHub import",
       );
       setPullDialogOpen(false);
     } finally {
@@ -1383,7 +1632,9 @@ export function FileScreen() {
       setPullPreview(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not import Creed from GitHub"
+        error instanceof Error
+          ? error.message
+          : "Could not import Creed from GitHub",
       );
     } finally {
       setPullBusy(false);
@@ -1391,7 +1642,9 @@ export function FileScreen() {
   }
 
   const setActiveShellSection = useCreedShellActiveSection();
-  const scrollLockRef = useRef<{ sectionId: string; until: number } | null>(null);
+  const scrollLockRef = useRef<{ sectionId: string; until: number } | null>(
+    null,
+  );
 
   const handleSectionSelect = useCallback(
     (sectionId: string) => {
@@ -1401,13 +1654,17 @@ export function FileScreen() {
         return;
       }
 
-      const element = container.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`);
+      const element = container.querySelector<HTMLElement>(
+        `[data-section-id="${sectionId}"]`,
+      );
 
       if (!element) {
         return;
       }
 
-      const stickyHeader = container.querySelector<HTMLElement>("[data-file-sticky-header]");
+      const stickyHeader = container.querySelector<HTMLElement>(
+        "[data-file-sticky-header]",
+      );
       const stickyOffset = stickyHeader?.getBoundingClientRect().height ?? 96;
 
       scrollLockRef.current = { sectionId, until: Date.now() + 1200 };
@@ -1418,17 +1675,19 @@ export function FileScreen() {
         behavior: "smooth",
       });
     },
-    [setActiveShellSection]
+    [setActiveShellSection],
   );
 
   const handleProposalSelect = useCallback((proposalId: string) => {
     const container = editorScrollRef.current;
     if (!container) return;
     const element = container.querySelector<HTMLElement>(
-      `[data-proposal-id="${proposalId}"]`
+      `[data-proposal-id="${proposalId}"]`,
     );
     if (!element) return;
-    const stickyHeader = container.querySelector<HTMLElement>("[data-file-sticky-header]");
+    const stickyHeader = container.querySelector<HTMLElement>(
+      "[data-file-sticky-header]",
+    );
     const stickyOffset = stickyHeader?.getBoundingClientRect().height ?? 96;
     container.scrollTo({
       top: Math.max(element.offsetTop - stickyOffset - 16, 0),
@@ -1449,13 +1708,22 @@ export function FileScreen() {
 
   const shellFileActions = useMemo(
     () => ({
-      onAddSection: () => openComposerAndReveal(),
+      // Members can't create sections, so the shell/command "add section" entry
+      // is a no-op for them (the affordance is also hidden in the UI).
+      onAddSection: canCreateSections
+        ? () => openComposerAndReveal()
+        : undefined,
       onSectionSelect: handleSectionSelect,
       onProposalSelect: handleProposalSelect,
       onOpenPush: () => openPushFromShellRef.current(),
       onSetActivityOpen: (open: boolean) => setActivityOpen(open),
     }),
-    [handleSectionSelect, handleProposalSelect, openComposerAndReveal]
+    [
+      handleSectionSelect,
+      handleProposalSelect,
+      openComposerAndReveal,
+      canCreateSections,
+    ],
   );
   useCreedShellFileActions(shellFileActions);
 
@@ -1466,9 +1734,9 @@ export function FileScreen() {
   const pendingNewSectionProposalCount = useMemo(
     () =>
       state.proposals.filter(
-        (p) => p.status === "pending" && p.draft.kind === "new-section"
+        (p) => p.status === "pending" && p.draft.kind === "new-section",
       ).length,
-    [state.proposals]
+    [state.proposals],
   );
 
   useEffect(() => {
@@ -1479,7 +1747,9 @@ export function FileScreen() {
     // sidebar's "active row" highlight follows the user's scroll into a
     // proposal preview the same way it follows real section scrolls.
     const elements = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-section-id], [data-proposal-id]")
+      container.querySelectorAll<HTMLElement>(
+        "[data-section-id], [data-proposal-id]",
+      ),
     );
     if (elements.length === 0) return;
 
@@ -1488,7 +1758,9 @@ export function FileScreen() {
     }
 
     function update() {
-      const stickyHeader = container?.querySelector<HTMLElement>("[data-file-sticky-header]");
+      const stickyHeader = container?.querySelector<HTMLElement>(
+        "[data-file-sticky-header]",
+      );
       const offset = (stickyHeader?.getBoundingClientRect().height ?? 96) + 32;
       let bestId: string | null = null;
       let bestDistance = Infinity;
@@ -1533,7 +1805,11 @@ export function FileScreen() {
       window.removeEventListener("resize", update);
       setActiveShellSection(null);
     };
-  }, [setActiveShellSection, state.sections.length, pendingNewSectionProposalCount]);
+  }, [
+    setActiveShellSection,
+    state.sections.length,
+    pendingNewSectionProposalCount,
+  ]);
 
   useEffect(() => {
     if (state.sections.length === 0) {
@@ -1665,7 +1941,10 @@ export function FileScreen() {
             // landing on a fresh navigation, so match the mechanism that works.
             element.scrollIntoView({ behavior: "smooth", block: "start" });
             if (intent.type === "section") {
-              scrollLockRef.current = { sectionId: intent.sectionId, until: Date.now() + 1200 };
+              scrollLockRef.current = {
+                sectionId: intent.sectionId,
+                until: Date.now() + 1200,
+              };
               setActiveShellSection(intent.sectionId);
             }
             window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
@@ -1695,7 +1974,10 @@ export function FileScreen() {
     <>
       <div className="relative flex h-full min-h-0 bg-[var(--creed-surface)] transition-colors duration-200">
         <div className="min-w-0 flex-1">
-          <div ref={editorScrollRef} className="h-full overflow-y-auto overscroll-contain creed-scrollbar">
+          <div
+            ref={editorScrollRef}
+            className="h-full overflow-y-auto overscroll-contain creed-scrollbar"
+          >
             <div className="mx-auto max-w-[920px] px-4 py-6 pb-28 md:px-12 md:py-10 md:pb-10 xl:px-16">
               <div
                 data-file-sticky-header
@@ -1703,22 +1985,26 @@ export function FileScreen() {
               >
                 <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <div className="font-heading text-[1.22rem] font-medium tracking-[-0.03em] text-[var(--creed-text-primary)] md:text-[1.45rem]">
-                      {state.user.name} / Creed
-                    </div>
-                    <SaveStatus saving={state.saving} lastSavedAt={state.lastSavedAt} />
+                    <CreedSwitcher />
+                    <SaveStatus
+                      saving={state.saving}
+                      lastSavedAt={state.lastSavedAt}
+                    />
                   </div>
 
                   <div className="flex items-center gap-2 self-start">
                     <div className="inline-flex h-7 items-center gap-1">
                       <AnimatePresence initial={false}>
-                        {fullQualityDirty || qualityCanRunInitialAnalysis ? (
+                        {canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis) ? (
                           <motion.div
                             key="refresh-full-quality"
                             initial={{ opacity: 0, scale: 0.88, width: 0 }}
                             animate={{ opacity: 1, scale: 1, width: 28 }}
                             exit={{ opacity: 0, scale: 0.88, width: 0 }}
-                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                            transition={{
+                              duration: 0.18,
+                              ease: [0.22, 1, 0.36, 1],
+                            }}
                             className="overflow-hidden"
                           >
                             <QualityRefreshButton
@@ -1732,9 +2018,6 @@ export function FileScreen() {
                       <OverallQualityPopover
                         report={qualityReport}
                         loading={qualityLoading}
-                        notice={qualityNotice}
-                        canRefresh={qualityEnabled && state.sections.length > 0}
-                        onRefresh={() => void refreshFullQuality()}
                       >
                         <button
                           type="button"
@@ -1774,7 +2057,14 @@ export function FileScreen() {
                       <Button
                         variant="outline"
                         size="sm"
-                        style={{ borderTopLeftRadius: 13, borderBottomLeftRadius: 13, borderTopRightRadius: 0, borderBottomRightRadius: 0, height: 32, minHeight: 32 }}
+                        style={{
+                          borderTopLeftRadius: 13,
+                          borderBottomLeftRadius: 13,
+                          borderTopRightRadius: 0,
+                          borderBottomRightRadius: 0,
+                          height: 32,
+                          minHeight: 32,
+                        }}
                         className={cn(
                           // Neutral outline pill - this button only OPENS the
                           // push/pull dialog. The brand-blue CTA lives on the
@@ -1782,7 +2072,8 @@ export function FileScreen() {
                           // remote Creed), so we keep the trigger here calm to
                           // avoid two competing CTAs on screen.
                           "border-r-0 border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[12px] md:px-3.5 md:text-sm",
-                          !githubConfigured && "text-[var(--creed-text-tertiary)]"
+                          !githubConfigured &&
+                            "text-[var(--creed-text-tertiary)]",
                         )}
                         onMouseEnter={versionIcon.start}
                         onMouseLeave={versionIcon.settle}
@@ -1798,12 +2089,24 @@ export function FileScreen() {
                             void handleOpenPushReview();
                           }
                         }}
-                        disabled={selectedVersionAction === "pull" ? pullDisabled : pushDisabled}
+                        disabled={
+                          selectedVersionAction === "pull"
+                            ? pullDisabled
+                            : pushDisabled
+                        }
                       >
                         {selectedVersionAction === "pull" ? (
-                          <CloudDownloadIcon ref={versionIcon.iconRef} size={14} className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none" />
+                          <CloudDownloadIcon
+                            ref={versionIcon.iconRef}
+                            size={14}
+                            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                          />
                         ) : (
-                          <CloudUploadIcon ref={versionIcon.iconRef} size={14} className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none" />
+                          <CloudUploadIcon
+                            ref={versionIcon.iconRef}
+                            size={14}
+                            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                          />
                         )}
                         {selectedVersionAction === "pull" ? "Pull" : "Push"}
                       </Button>
@@ -1813,11 +2116,20 @@ export function FileScreen() {
                           <Button
                             variant="outline"
                             size="icon-sm"
-                            style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 13, borderBottomRightRadius: 13, height: 32, width: 32, minHeight: 32, minWidth: 32 }}
-                            className="border-[var(--creed-border)] bg-[var(--creed-surface)] data-[state=open]:bg-[var(--creed-surface-raised)]"
+                            style={{
+                              borderTopLeftRadius: 0,
+                              borderBottomLeftRadius: 0,
+                              borderTopRightRadius: 13,
+                              borderBottomRightRadius: 13,
+                              height: 32,
+                              width: 32,
+                              minHeight: 32,
+                              minWidth: 32,
+                            }}
+                            className="group/vcsplit border-[var(--creed-border)] bg-[var(--creed-surface)] data-[state=open]:bg-[var(--creed-surface-raised)]"
                             disabled={!githubConfigured}
                           >
-                            <ChevronDown className="h-3.5 w-3.5" />
+                            <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-data-[state=open]/vcsplit:rotate-180" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
@@ -1857,10 +2169,16 @@ export function FileScreen() {
                       variant="outline"
                       size="icon-sm"
                       aria-label="Activity"
-                      style={{ borderRadius: 13, height: 32, width: 32, minHeight: 32, minWidth: 32 }}
+                      style={{
+                        borderRadius: 13,
+                        height: 32,
+                        width: 32,
+                        minHeight: 32,
+                        minWidth: 32,
+                      }}
                       className={cn(
                         "border-[var(--creed-border)] bg-[var(--creed-surface)] md:hidden",
-                        activityOpen && "bg-[var(--creed-surface-raised)]"
+                        activityOpen && "bg-[var(--creed-surface-raised)]",
                       )}
                       onMouseEnter={activityIcon.start}
                       onMouseLeave={activityIcon.settle}
@@ -1880,7 +2198,7 @@ export function FileScreen() {
                       style={{ borderRadius: 13, height: 32, minHeight: 32 }}
                       className={cn(
                         "hidden border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[12px] md:inline-flex md:px-3.5 md:text-sm",
-                        activityOpen && "bg-[var(--creed-surface-raised)]"
+                        activityOpen && "bg-[var(--creed-surface-raised)]",
                       )}
                       onMouseEnter={activityIcon.start}
                       onMouseLeave={activityIcon.settle}
@@ -1896,14 +2214,23 @@ export function FileScreen() {
                       Activity
                     </Button>
 
-                    <HeaderLockButton locked={state.locked} onToggle={toggleLock} />
+                    <HeaderLockButton
+                      locked={state.locked}
+                      onToggle={toggleLock}
+                    />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="outline"
                           size="icon-sm"
-                          style={{ borderRadius: 13, height: 32, width: 32, minHeight: 32, minWidth: 32 }}
+                          style={{
+                            borderRadius: 13,
+                            height: 32,
+                            width: 32,
+                            minHeight: 32,
+                            minWidth: 32,
+                          }}
                           className="border-[var(--creed-border)] bg-[var(--creed-surface)] data-[state=open]:bg-[var(--creed-surface-raised)]"
                         >
                           <Ellipsis className="h-3.5 w-3.5" />
@@ -1935,6 +2262,24 @@ export function FileScreen() {
                           ) : null}
                         </AnimatedMenuIconItem>
                         <AnimatedMenuIconItem
+                          icon={DownloadIcon}
+                          showIcon={copiedAction !== "download"}
+                          className="text-sm"
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            downloadFile(
+                              "creed.md",
+                              exportMarkdown(),
+                              "text/markdown;charset=utf-8",
+                            );
+                          }}
+                        >
+                          {copiedAction === "download" ? (
+                            <AnimatedCheckmark />
+                          ) : null}
+                          {copiedAction === "download" ? "Exported" : "Export"}
+                        </AnimatedMenuIconItem>
+                        <AnimatedMenuIconItem
                           icon={CopyIcon}
                           showIcon={copiedAction !== "copy"}
                           className="min-w-[82px] text-sm"
@@ -1947,24 +2292,6 @@ export function FileScreen() {
                             <AnimatedCheckmark />
                           ) : null}
                           {copiedAction === "copy" ? "Copied" : "Copy"}
-                        </AnimatedMenuIconItem>
-                        <AnimatedMenuIconItem
-                          icon={DownloadIcon}
-                          showIcon={copiedAction !== "download"}
-                          className="text-sm"
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            downloadFile(
-                              "creed.md",
-                              exportMarkdown(),
-                              "text/markdown;charset=utf-8"
-                            );
-                          }}
-                        >
-                          {copiedAction === "download" ? (
-                            <AnimatedCheckmark />
-                          ) : null}
-                          {copiedAction === "download" ? "Downloaded" : "Download"}
                         </AnimatedMenuIconItem>
                         <DropdownMenuSeparator />
                         <AnimatedMenuIconItem
@@ -2003,11 +2330,18 @@ export function FileScreen() {
                   <div className="mt-5 flex justify-start">
                     <ReviewPill
                       proposals={normalizedPendingProposals.map((proposal) => {
-                        const target = state.sections.find((s) => s.id === proposal.sectionId);
+                        const target = state.sections.find(
+                          (s) => s.id === proposal.sectionId,
+                        );
                         return {
                           proposal,
                           existingContent: target?.content ?? "",
                           sectionName: target?.name ?? proposal.sectionName,
+                          canReview:
+                            state.creedType !== "company" ||
+                            (state.company?.myPermissions?.[
+                              proposal.sectionId
+                            ] ?? "direct") === "direct",
                         };
                       })}
                       onAcceptAll={() => {
@@ -2015,11 +2349,13 @@ export function FileScreen() {
                         // per-proposal server-state fetch that was
                         // re-introducing already-accepted proposals.
                         acceptProposals(
-                          normalizedPendingProposals.map((p) => p.id)
+                          normalizedPendingProposals.map((p) => p.id),
                         );
                       }}
                       onRejectAll={() => {
-                        normalizedPendingProposals.forEach((p) => rejectProposal(p.id));
+                        normalizedPendingProposals.forEach((p) =>
+                          rejectProposal(p.id),
+                        );
                       }}
                       onAcceptOne={(id) => {
                         void acceptProposal(id);
@@ -2027,14 +2363,44 @@ export function FileScreen() {
                       onRejectOne={(id) => {
                         rejectProposal(id);
                       }}
+                      onDeleteOne={(id) => {
+                        withdrawProposal(id);
+                      }}
+                      onEditOne={(proposal) => {
+                        // Re-open the draft in its section, withdraw the pending
+                        // one, and scroll there so they continue editing.
+                        const html =
+                          proposal.draft.kind === "rich-text"
+                            ? (proposal.draft.contentHtml ?? "")
+                            : "";
+                        setReopenDraft({
+                          sectionId: proposal.sectionId,
+                          content: html,
+                        });
+                        withdrawProposal(proposal.id);
+                        const el = document.querySelector<HTMLElement>(
+                          `[data-section-id="${proposal.sectionId}"]`,
+                        );
+                        if (el)
+                          el.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                      }}
                       onJumpToProposal={(proposal) => {
                         const targetId =
-                          proposal.draft.kind === "new-section" ? null : proposal.sectionId;
+                          proposal.draft.kind === "new-section"
+                            ? null
+                            : proposal.sectionId;
                         if (!targetId) return;
                         const el = document.querySelector<HTMLElement>(
-                          `[data-section-id="${targetId}"]`
+                          `[data-section-id="${targetId}"]`,
                         );
-                        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                        if (el)
+                          el.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
                       }}
                     />
                   </div>
@@ -2049,32 +2415,98 @@ export function FileScreen() {
               >
                 {visibleSections.map((section) => {
                   const quality = sectionQualityById.get(section.id);
-                  const analyzedFingerprint = analyzedSectionFingerprints[section.id];
-                  const currentFingerprint = sectionFingerprintById.get(section.id);
+                  const analyzedFingerprint =
+                    analyzedSectionFingerprints[section.id];
+                  const currentFingerprint = sectionFingerprintById.get(
+                    section.id,
+                  );
 
-                  const isOverridden = state.sectionLockOverrides.includes(section.id);
-                  const sectionLocked = isOverridden ? !state.locked : state.locked;
+                  const isOverridden = state.sectionLockOverrides.includes(
+                    section.id,
+                  );
+                  const baseLocked = isOverridden
+                    ? !state.locked
+                    : state.locked;
+                  // Company mode: a frozen Creed is read-only for everyone, and a
+                  // member with Read-only access on this section cannot edit it.
+                  // Direct/Proposal-only stay editable (Proposal-only edits are
+                  // filed as proposals by the provider).
+                  const myPerm =
+                    state.creedType === "company"
+                      ? (state.company?.myPermissions?.[section.id] ?? "direct")
+                      : "direct";
+                  const frozen =
+                    state.creedType === "company" &&
+                    state.company?.accessState === "frozen";
+                  const companyReadOnly =
+                    state.creedType === "company" &&
+                    (frozen || myPerm === "read-only");
+                  const sectionLocked = baseLocked || companyReadOnly;
+                  // A company member with Proposal-only edits by hand into a local
+                  // draft, then submits it as a proposal (no autosave). Only when
+                  // not frozen and not otherwise locked.
+                  const proposeMode =
+                    state.creedType === "company" &&
+                    myPerm === "propose" &&
+                    !sectionLocked;
+                  // Who may accept/reject proposals on this section: owner/admin
+                  // (always "direct") and Direct-edit members. Proposal-only
+                  // members see proposals preview-only.
+                  const canReview =
+                    state.creedType !== "company" || myPerm === "direct";
+                  // A member's per-section read-only (not the whole-Creed frozen
+                  // state, which has its own banner). Drives the "look but don't
+                  // touch" treatment: no drag, no kebab, a click shows an amber
+                  // "read-only" toast instead of letting them edit.
+                  const readOnlyMember =
+                    state.creedType === "company" &&
+                    !frozen &&
+                    myPerm === "read-only";
                   return (
                     <SectionCard
                       key={section.id}
                       section={section}
                       locked={sectionLocked}
+                      proposeMode={proposeMode}
+                      canReview={canReview}
+                      readOnlyMember={readOnlyMember}
+                      canDrag={canReorderSections}
+                      reopenDraft={
+                        reopenDraft?.sectionId === section.id
+                          ? reopenDraft.content
+                          : null
+                      }
+                      onReopenConsumed={() => setReopenDraft(null)}
+                      onSubmitProposal={(content) =>
+                        fileProposalEdit(section.id, content)
+                      }
                       globalLocked={state.locked}
                       onToggleLock={() => toggleSectionLock(section.id)}
                       quality={quality}
                       qualityLoading={qualitySectionLoading === section.id}
                       qualityDirty={
                         qualityEnabled &&
+                        canSeeQuality &&
+                        // Members can only refresh sections they have propose or direct access to.
+                        (state.creedType !== "company" || canProposeToSection(myPerm)) &&
                         Boolean(quality) &&
-                        (!analyzedFingerprint || analyzedFingerprint !== currentFingerprint)
+                        (!analyzedFingerprint ||
+                          analyzedFingerprint !== currentFingerprint)
                       }
-                      onRefreshQuality={() => void refreshSectionQuality(section)}
-                      proposals={normalizedPendingProposals.filter((item) => item.sectionId === section.id)}
+                      onRefreshQuality={() =>
+                        void refreshSectionQuality(section)
+                      }
+                      proposals={normalizedPendingProposals.filter(
+                        (item) => item.sectionId === section.id,
+                      )}
                       onAcceptProposal={(id) => {
                         void acceptProposal(id);
                       }}
                       onRejectProposal={(id) => {
                         rejectProposal(id);
+                      }}
+                      onWithdrawProposal={(id) => {
+                        withdrawProposal(id);
                       }}
                       onChangeRichText={(content) => {
                         updateRichTextSection(section.id, content);
@@ -2085,8 +2517,14 @@ export function FileScreen() {
                           name: section.name,
                         })
                       }
-                      onDuplicate={() => duplicateSection(section.id)}
-                      onSetAccent={(accent) => setSectionAccent(section.id, accent)}
+                      onCopy={() => {
+                        void navigator.clipboard.writeText(
+                          sectionToMarkdown(section).trim(),
+                        );
+                      }}
+                      onSetAccent={(accent) =>
+                        setSectionAccent(section.id, accent)
+                      }
                       onDelete={() =>
                         // Defer so the section menu closes before the dialog
                         // opens, letting the dialog play its enter animation.
@@ -2096,14 +2534,18 @@ export function FileScreen() {
                               id: section.id,
                               name: section.name,
                             }),
-                          0
+                          0,
                         )
                       }
                       onArchive={() => {
                         archiveSection(section.id);
                         toast.success(`Archived "${section.name}"`);
                       }}
-                      onAddSectionAfter={() => openComposerAndReveal(section.id)}
+                      onAddSectionAfter={
+                        canCreateSections
+                          ? () => openComposerAndReveal(section.id)
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -2115,12 +2557,15 @@ export function FileScreen() {
                     Every section is archived
                   </div>
                   <div className="max-w-sm text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-                    Restore a section from Settings, under Archived, to bring it back into your Creed.
+                    Restore a section from Settings, under Archived, to bring it
+                    back into your Creed.
                   </div>
                 </div>
               ) : null}
 
-              {normalizedPendingProposals.filter((p) => p.draft.kind === "new-section").length > 0 ? (
+              {normalizedPendingProposals.filter(
+                (p) => p.draft.kind === "new-section",
+              ).length > 0 ? (
                 <div className="mt-10 space-y-3 md:mt-16">
                   {normalizedPendingProposals
                     .filter((p) => p.draft.kind === "new-section")
@@ -2141,110 +2586,118 @@ export function FileScreen() {
                 </div>
               ) : null}
 
-              <div ref={composerAreaRef} className="mt-10 md:mt-16">
-                {composerOpen ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                    className="rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-4 sm:p-5"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-medium text-[var(--creed-text-primary)]">
-                          New section
+              {canCreateSections ? (
+                <div ref={composerAreaRef} className="mt-10 md:mt-16">
+                  {composerOpen ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      className="rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-4 sm:p-5"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-medium text-[var(--creed-text-primary)]">
+                            New section
+                          </div>
+                          <div className="mt-0.5 hidden text-[12px] text-[var(--creed-text-secondary)] sm:block">
+                            Pick a starter or name your own.
+                          </div>
                         </div>
-                        <div className="mt-0.5 hidden text-[12px] text-[var(--creed-text-secondary)] sm:block">
-                          Pick a starter or name your own.
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="rounded-md"
-                        onClick={() => setComposerOpen(false)}
-                        aria-label="Close composer"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <Input
-                      ref={inputRef}
-                      value={composerName}
-                      onChange={(event) => setComposerName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          submitComposer();
-                        }
-                      }}
-                      placeholder="Section name..."
-                      className="mt-4 h-10 rounded-md border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[14px]"
-                    />
-
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {sectionSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.name}
-                          type="button"
-                          onClick={() => {
-                            setComposerName(suggestion.name);
-                            setComposerStarter(suggestion.starter);
-                            if (!insertAfterId) {
-                              addSection(suggestion.name, suggestion.starter);
-                            } else {
-                              addSectionAfter(insertAfterId, suggestion.name, suggestion.starter);
-                            }
-                            setComposerOpen(false);
-                            setInsertAfterId(null);
-                          }}
-                          className="rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="rounded-md"
+                          onClick={() => setComposerOpen(false)}
+                          aria-label="Close composer"
                         >
-                          {suggestion.name}
-                        </button>
-                      ))}
-                    </div>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
 
-                    <div className="mt-4 flex items-center justify-between gap-2">
-                      <Button
-                        variant="ghost"
-                        className="rounded-md text-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                        onClick={() => setComposerOpen(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={submitComposer}
-                        className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-                      >
-                        Create
-                      </Button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => openComposerAndReveal()}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--creed-border-strong)] bg-[var(--creed-surface)] px-4 py-3.5 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:border-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add section
-                  </button>
-                )}
-              </div>
+                      <Input
+                        ref={inputRef}
+                        value={composerName}
+                        onChange={(event) =>
+                          setComposerName(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            submitComposer();
+                          }
+                        }}
+                        placeholder="Section name..."
+                        className="mt-4 h-10 rounded-md border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[14px]"
+                      />
+
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {sectionSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion.name}
+                            type="button"
+                            onClick={() => {
+                              setComposerName(suggestion.name);
+                              setComposerStarter(suggestion.starter);
+                              if (!insertAfterId) {
+                                addSection(suggestion.name, suggestion.starter);
+                              } else {
+                                addSectionAfter(
+                                  insertAfterId,
+                                  suggestion.name,
+                                  suggestion.starter,
+                                );
+                              }
+                              setComposerOpen(false);
+                              setInsertAfterId(null);
+                            }}
+                            className="rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                          >
+                            {suggestion.name}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <Button
+                          variant="ghost"
+                          className="rounded-md text-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                          onClick={() => setComposerOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={submitComposer}
+                          className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                        >
+                          Create
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openComposerAndReveal()}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--creed-border-strong)] bg-[var(--creed-surface)] px-4 py-3.5 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:border-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add section
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
 
         <ActivityRail
           activity={state.activity}
+          creedType={state.creedType === "company" ? "company" : "personal"}
           proposals={state.proposals}
           sections={state.sections}
           open={activityOpen}
           onClose={() => setActivityOpen(false)}
         />
-
       </div>
 
       <CreedFindReplace scrollRef={editorScrollRef} />
@@ -2274,7 +2727,7 @@ export function FileScreen() {
                 changes={computeSectionChanges(
                   pushPreview.sections,
                   state.sections,
-                  state.sections
+                  state.sections,
                 )}
                 heading="Outgoing changes"
                 show={showPushPreview}
@@ -2294,7 +2747,11 @@ export function FileScreen() {
             </div>
           </div>
           <DialogFooter className="justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setPushDialogOpen(false)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setPushDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -2303,7 +2760,9 @@ export function FileScreen() {
               disabled={pushBusy || !githubConfigured}
             >
               {pushBusy ? "Pushing" : "Push Creed"}
-              {pushBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {pushBusy ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : null}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2314,7 +2773,9 @@ export function FileScreen() {
           <DialogHeader>
             <DialogTitle>Pull from GitHub</DialogTitle>
             <DialogDescription>
-              Review the remote <span className="font-mono text-[13px]">creed.md</span> before it replaces your local file.
+              Review the remote{" "}
+              <span className="font-mono text-[13px]">creed.md</span> before it
+              replaces your local file.
             </DialogDescription>
           </DialogHeader>
           {pullBusy && !pullPreview ? (
@@ -2333,7 +2794,7 @@ export function FileScreen() {
                 changes={computeSectionChanges(
                   state.sections,
                   pullPreview.sections,
-                  state.sections
+                  state.sections,
                 )}
                 heading="Incoming changes"
                 show={showPullPreview}
@@ -2342,7 +2803,11 @@ export function FileScreen() {
             </div>
           ) : null}
           <DialogFooter className="justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setPullDialogOpen(false)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setPullDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -2351,7 +2816,9 @@ export function FileScreen() {
               disabled={pullBusy || !pullPreview}
             >
               {pullBusy ? "Importing" : "Import remote Creed"}
-              {pullBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {pullBusy ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : null}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2372,7 +2839,7 @@ export function FileScreen() {
             value={renameSectionState?.name ?? ""}
             onChange={(event) =>
               setRenameSectionState((current) =>
-                current ? { ...current, name: event.target.value } : current
+                current ? { ...current, name: event.target.value } : current,
               )
             }
             className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px]"
@@ -2384,7 +2851,11 @@ export function FileScreen() {
             }}
           />
           <DialogFooter className="flex-row items-center justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setRenameSectionState(null)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setRenameSectionState(null)}
+            >
               Cancel
             </Button>
             <Button
@@ -2415,7 +2886,11 @@ export function FileScreen() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-row items-center justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setDeleteSectionState(null)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setDeleteSectionState(null)}
+            >
               Cancel
             </Button>
             <Button
@@ -2442,11 +2917,16 @@ export function FileScreen() {
               Delete Creed file
             </DialogTitle>
             <DialogDescription>
-              Wipes every section, proposal, and activity entry. Your account stays. This cannot be undone.
+              Wipes every section, proposal, and activity entry. Your account
+              stays. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-row items-center justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setDeleteFileOpen(false)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setDeleteFileOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -2467,12 +2947,17 @@ export function FileScreen() {
           <DialogHeader>
             <DialogTitle>Archive all sections</DialogTitle>
             <DialogDescription>
-              This moves every section to your archive and starts you with a single fresh section.
-              Nothing is deleted - restore any section anytime in Settings, under Archived.
+              This moves every section to your archive and starts you with a
+              single fresh section. Nothing is deleted - restore any section
+              anytime in Settings, under Archived.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-row items-center justify-between border-t-[var(--creed-border)] bg-[var(--creed-surface)] sm:justify-between">
-            <Button variant="ghost" className="rounded-md" onClick={() => setArchiveAllOpen(false)}>
+            <Button
+              variant="ghost"
+              className="rounded-md"
+              onClick={() => setArchiveAllOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -2495,6 +2980,13 @@ export function FileScreen() {
 function SectionCard({
   section,
   locked,
+  proposeMode = false,
+  canReview = true,
+  readOnlyMember = false,
+  canDrag = true,
+  reopenDraft = null,
+  onReopenConsumed,
+  onSubmitProposal,
   globalLocked,
   onToggleLock,
   quality,
@@ -2504,16 +2996,33 @@ function SectionCard({
   proposals,
   onAcceptProposal,
   onRejectProposal,
+  onWithdrawProposal,
   onChangeRichText,
   onRename,
   onSetAccent,
-  onDuplicate,
+  onCopy,
   onDelete,
   onArchive,
   onAddSectionAfter,
 }: {
   section: CreedSection;
   locked: boolean;
+  // Company Proposal-only: edits are buffered locally and submitted as a
+  // proposal via the header button, instead of autosaving.
+  proposeMode?: boolean;
+  // Whether this viewer can accept/reject proposals on this section.
+  canReview?: boolean;
+  // Per-member read-only (not whole-Creed frozen): look-but-don't-touch. No
+  // drag, no kebab; a click on the body shows an amber read-only toast.
+  readOnlyMember?: boolean;
+  // Whether this viewer may reorder sections (owner/admin, or personal). When
+  // false the drag handle is hidden and there's no icon left of the name.
+  canDrag?: boolean;
+  // When the ReviewPill's "Edit" fires for a proposal on this section, its draft
+  // content arrives here to be loaded back into the local editor draft.
+  reopenDraft?: string | null;
+  onReopenConsumed?: () => void;
+  onSubmitProposal?: (content: string) => Promise<boolean> | boolean | void;
   globalLocked: boolean;
   onToggleLock: () => void;
   quality?: CreedQualityReport["sections"][number];
@@ -2523,15 +3032,53 @@ function SectionCard({
   proposals: Proposal[];
   onAcceptProposal: (proposalId: string) => void;
   onRejectProposal: (proposalId: string) => void;
+  onWithdrawProposal: (proposalId: string) => void;
   onChangeRichText: (content: string) => void;
   onRename: () => void;
   onSetAccent: (accent: AccentKey) => void;
-  onDuplicate: () => void;
+  onCopy: () => void;
   onDelete: () => void;
   onArchive: () => void;
-  onAddSectionAfter: () => void;
+  onAddSectionAfter?: () => void;
 }) {
   const dragControls = useDragControls();
+  // Proposal-only draft buffer: null = clean (mirrors canonical section.content),
+  // otherwise the member's unsent local edit. Reset whenever the section id
+  // changes so a draft never leaks across sections.
+  const [proposalDraft, setProposalDraft] = useState<string | null>(null);
+  const [submittingProposal, setSubmittingProposal] = useState(false);
+  useEffect(() => {
+    setProposalDraft(null);
+  }, [section.id]);
+  // "Edit" from the ReviewPill hands us the withdrawn proposal's content to
+  // resume from; load it into the local draft, then clear the request.
+  useEffect(() => {
+    if (reopenDraft != null) {
+      setProposalDraft(reopenDraft);
+      onReopenConsumed?.();
+    }
+  }, [reopenDraft, onReopenConsumed]);
+  // Draft is only non-null when it genuinely differs from canonical (the editor
+  // emits an onChange echo on init/normalize; we collapse those back to null).
+  const proposalDirty = proposeMode && proposalDraft !== null;
+  async function submitProposal() {
+    if (!proposalDirty || !onSubmitProposal || submittingProposal) return;
+    setSubmittingProposal(true);
+    const ok = await onSubmitProposal(proposalDraft ?? section.content);
+    setSubmittingProposal(false);
+    if (ok !== false) setProposalDraft(null);
+  }
+  // "Edit" on your own pending proposal: pull its draft back into the editor so
+  // you continue where you left off, and withdraw the pending one (you'll
+  // re-submit when done). "Delete" just withdraws it.
+  function editProposal(p: Proposal) {
+    const html =
+      p.draft.kind === "rich-text"
+        ? (p.draft.contentHtml ?? section.content)
+        : section.content;
+    setProposalDraft(html === section.content ? null : html);
+    onWithdrawProposal(p.id);
+  }
   const accent = accentColorMap[section.accent];
   // Ref so the Colour sub-trigger row can drive the stamp animation when
   // the row itself is hovered (not just the icon's own hit-target).
@@ -2547,13 +3094,18 @@ function SectionCard({
       className="scroll-mt-24"
     >
       <section className="group relative">
-        <button
-          type="button"
-          onPointerDown={(event) => dragControls.start(event)}
-          className="group/drag absolute -left-7 top-1 hidden rounded-full p-1 text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)] xl:flex"
-        >
-          <GripVerticalIcon className="h-4 w-4" size={16} />
-        </button>
+        {/* Only reorderers (owner/admin, or the personal user) get the drag
+            handle. Members can't reorder, so they get no icon at all on the
+            left of the section name. */}
+        {canDrag ? (
+          <button
+            type="button"
+            onPointerDown={(event) => dragControls.start(event)}
+            className="group/drag absolute -left-7 top-1 hidden rounded-full p-1 text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)] xl:flex"
+          >
+            <GripVerticalIcon className="h-4 w-4" size={16} />
+          </button>
+        ) : null}
 
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -2569,7 +3121,11 @@ function SectionCard({
                 >
                   {section.name}
                 </span>
-                <SectionQualityPopover quality={quality} color={accent} loading={qualityLoading} />
+                <SectionQualityPopover
+                  quality={quality}
+                  color={accent}
+                  loading={qualityLoading}
+                />
                 <AnimatePresence initial={false}>
                   {qualityDirty ? (
                     <motion.div
@@ -2604,7 +3160,11 @@ function SectionCard({
                     >
                       <SectionLockButton
                         locked={locked}
-                        title={locked ? `Unlock ${section.name}` : `Lock ${section.name}`}
+                        title={
+                          locked
+                            ? `Unlock ${section.name}`
+                            : `Lock ${section.name}`
+                        }
                         onToggle={onToggleLock}
                       />
                     </motion.div>
@@ -2614,123 +3174,172 @@ function SectionCard({
             </div>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)] data-[state=open]:text-[var(--creed-text-primary)]"
-              >
-                <Ellipsis className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="border-[var(--creed-border)] bg-[var(--creed-surface)]">
-              <AnimatedMenuIconItem
-                icon={SquarePenIcon}
-                className="text-sm"
-                onSelect={onRename}
-              >
-                Rename
-              </AnimatedMenuIconItem>
-              {/*
+          {readOnlyMember ? null : (
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* Proposal-only: submit the buffered manual edit as a proposal.
+                Identical ghost icon-sm button to the kebab beside it, just with
+                a blue send glyph. Appears only once there are unsent changes. */}
+              <AnimatePresence initial={false}>
+                {proposeMode && proposalDirty ? (
+                  <motion.div
+                    key={`${section.id}-submit-proposal`}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <SimpleTooltip label="Submit as proposal">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => void submitProposal()}
+                        disabled={submittingProposal}
+                        aria-label="Submit as proposal"
+                        className="text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)]"
+                      >
+                        {submittingProposal ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </SimpleTooltip>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)] data-[state=open]:text-[var(--creed-text-primary)]"
+                  >
+                    <Ellipsis className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="border-[var(--creed-border)] bg-[var(--creed-surface)]"
+                >
+                  <AnimatedMenuIconItem
+                    icon={SquarePenIcon}
+                    className="text-sm"
+                    onSelect={onRename}
+                  >
+                    Rename
+                  </AnimatedMenuIconItem>
+                  {/*
                 Colour sub-menu. Hover-driven on desktop via Radix's default
                 Sub behaviour, with a custom chevron that flips < → > on
                 hover/open so the affordance matches the profile-menu
                 Feedback row. The default trailing chevron is hidden.
               */}
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger
-                  onMouseEnter={() => stampIconRef.current?.startAnimation()}
-                  onMouseLeave={() => stampIconRef.current?.stopAnimation()}
-                  className="group/colour rounded-[var(--radius-md)] gap-1.5 px-2.5 py-2 text-sm [&>svg:last-of-type]:hidden"
-                >
-                  <StampIcon
-                    ref={stampIconRef}
-                    size={14}
-                    className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
-                  />
-                  <span className="flex-1 text-left">Colour</span>
-                  <ChevronLeft
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      "group-hover/colour:rotate-180 group-data-[state=open]/colour:rotate-180"
-                    )}
-                  />
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent
-                    // Matches the gap the profile dropdown uses from its
-                    // trigger button (see feedback-menu.tsx). Bridging
-                    // pseudo widens to cover the 14px gap so cursor travel
-                    // between trigger row and picker doesn't dismiss it.
-                    sideOffset={14}
-                    alignOffset={0}
-                    className="relative w-auto border-[var(--creed-border)] bg-[var(--creed-surface)] p-2 before:pointer-events-auto before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-4 before:content-['']"
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                      onMouseEnter={() =>
+                        stampIconRef.current?.startAnimation()
+                      }
+                      onMouseLeave={() => stampIconRef.current?.stopAnimation()}
+                      className="group/colour rounded-[var(--radius-md)] gap-1.5 px-2.5 py-2 text-sm [&>svg:last-of-type]:hidden"
+                    >
+                      <StampIcon
+                        ref={stampIconRef}
+                        size={14}
+                        className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                      />
+                      <span className="flex-1 text-left">Colour</span>
+                      <ChevronLeft
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                          "group-hover/colour:rotate-180 group-data-[state=open]/colour:rotate-180",
+                        )}
+                      />
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent
+                        // Matches the gap the profile dropdown uses from its
+                        // trigger button (see feedback-menu.tsx). Bridging
+                        // pseudo widens to cover the 14px gap so cursor travel
+                        // between trigger row and picker doesn't dismiss it.
+                        sideOffset={14}
+                        alignOffset={0}
+                        className="relative w-auto border-[var(--creed-border)] bg-[var(--creed-surface)] p-2 before:pointer-events-auto before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-4 before:content-['']"
+                      >
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {VISIBLE_ACCENT_KEYS.map((accentKey) => {
+                            const selected =
+                              section.accent === accentKey ||
+                              // The legacy `custom` storage value renders as mono
+                              // in the palette, so a section saved as "custom"
+                              // should highlight the mono cell.
+                              (accentKey === "mono" &&
+                                section.accent === "custom");
+                            return (
+                              <button
+                                key={accentKey}
+                                type="button"
+                                aria-label={accentLabelMap[accentKey]}
+                                aria-pressed={selected}
+                                onClick={(event) => {
+                                  const rect =
+                                    event.currentTarget.getBoundingClientRect();
+                                  onSetAccent(accentKey);
+                                  fireConfetti(
+                                    rect.left + rect.width / 2,
+                                    rect.top + rect.height / 2,
+                                    accentColorMap[accentKey],
+                                  );
+                                }}
+                                // The selected tick is painted in the app background colour
+                                // so it reads as cut out of the filled swatch.
+                                className="group/swatch relative flex aspect-square h-7 w-7 items-center justify-center overflow-hidden rounded-md transition-transform duration-150 active:scale-95"
+                                style={{
+                                  backgroundColor: accentColorMap[accentKey],
+                                }}
+                              >
+                                <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-150 group-hover/swatch:bg-black/15" />
+                                {selected ? (
+                                  <Check
+                                    className="relative h-4 w-4"
+                                    strokeWidth={3}
+                                    style={{ color: "var(--creed-background)" }}
+                                  />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                  <AnimatedMenuIconItem
+                    icon={CopyIcon}
+                    className="text-sm"
+                    onSelect={onCopy}
                   >
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {VISIBLE_ACCENT_KEYS.map((accentKey) => {
-                        const selected =
-                          section.accent === accentKey ||
-                          // The legacy `custom` storage value renders as mono
-                          // in the palette, so a section saved as "custom"
-                          // should highlight the mono cell.
-                          (accentKey === "mono" && section.accent === "custom");
-                        return (
-                          <button
-                            key={accentKey}
-                            type="button"
-                            aria-label={accentLabelMap[accentKey]}
-                            aria-pressed={selected}
-                            onClick={(event) => {
-                              const rect = event.currentTarget.getBoundingClientRect();
-                              onSetAccent(accentKey);
-                              fireConfetti(
-                                rect.left + rect.width / 2,
-                                rect.top + rect.height / 2,
-                                accentColorMap[accentKey]
-                              );
-                            }}
-                            // The selected tick is painted in the app background colour
-                            // so it reads as cut out of the filled swatch.
-                            className="group/swatch relative flex aspect-square h-7 w-7 items-center justify-center overflow-hidden rounded-md transition-transform duration-150 active:scale-95"
-                            style={{ backgroundColor: accentColorMap[accentKey] }}
-                          >
-                            <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-150 group-hover/swatch:bg-black/15" />
-                            {selected ? (
-                              <Check
-                                className="relative h-4 w-4"
-                                strokeWidth={3}
-                                style={{ color: "var(--creed-background)" }}
-                              />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-              <AnimatedMenuIconItem
-                icon={FileStackIcon}
-                className="text-sm"
-                onSelect={onDuplicate}
-              >
-                Duplicate
-              </AnimatedMenuIconItem>
-              <DropdownMenuSeparator />
-              <AnimatedMenuIconItem icon={ArchiveIcon} className="text-sm" onSelect={onArchive}>
-                Archive
-              </AnimatedMenuIconItem>
-              {/* Solid red, matching the file menu's Delete. */}
-              <AnimatedMenuIconItem
-                icon={DeleteIcon}
-                className="mt-1 bg-[#DC2626] text-sm text-white hover:bg-[#B91C1C] hover:text-white focus:bg-[#B91C1C] focus:text-white data-[highlighted]:bg-[#B91C1C] data-[highlighted]:text-white not-data-[variant=destructive]:focus:**:text-white"
-                onSelect={onDelete}
-              >
-                Delete
-              </AnimatedMenuIconItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                    Copy
+                  </AnimatedMenuIconItem>
+                  <DropdownMenuSeparator />
+                  <AnimatedMenuIconItem
+                    icon={ArchiveIcon}
+                    className="text-sm"
+                    onSelect={onArchive}
+                  >
+                    Archive
+                  </AnimatedMenuIconItem>
+                  {/* Solid red, matching the file menu's Delete. */}
+                  <AnimatedMenuIconItem
+                    icon={DeleteIcon}
+                    className="mt-1 bg-[#DC2626] text-sm text-white hover:bg-[#B91C1C] hover:text-white focus:bg-[#B91C1C] focus:text-white data-[highlighted]:bg-[#B91C1C] data-[highlighted]:text-white not-data-[variant=destructive]:focus:**:text-white"
+                    onSelect={onDelete}
+                  >
+                    Delete
+                  </AnimatedMenuIconItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </div>
 
         {proposals.length > 0 ? (
@@ -2749,6 +3358,7 @@ function SectionCard({
                     existingName={section.name}
                     existingAccent={accentColorMap[section.accent]}
                     agentName={p.agentName}
+                    canReview={canReview}
                     onAccept={() => onAcceptProposal(p.id)}
                     onReject={() => onRejectProposal(p.id)}
                   />
@@ -2760,21 +3370,45 @@ function SectionCard({
                   proposal={p}
                   existingContent={section.content}
                   agentName={p.agentName}
+                  canReview={canReview}
+                  mine={Boolean(p.mine)}
                   onAccept={() => onAcceptProposal(p.id)}
                   onReject={() => onRejectProposal(p.id)}
+                  onEdit={() => editProposal(p)}
+                  onDelete={() => onWithdrawProposal(p.id)}
                 />
               );
             })}
           </div>
         ) : null}
 
-        <div>
+        <div
+          // Read-only for this member: nothing is greyed, but a click on the
+          // body (as if to edit) surfaces an amber "read-only" nudge. Text
+          // selection still works, so we skip the toast mid-selection.
+          onClick={
+            readOnlyMember
+              ? () => {
+                  if ((window.getSelection()?.toString() ?? "") === "") {
+                    toast.warning("This section is read-only.");
+                  }
+                }
+              : undefined
+          }
+        >
           <RichTextEditor
             sectionId={section.id}
-            content={section.content}
+            content={
+              proposeMode ? (proposalDraft ?? section.content) : section.content
+            }
             readOnly={locked}
             accentColor={accentColorMap[section.accent]}
-            onChange={onChangeRichText}
+            onChange={
+              proposeMode
+                ? (html) =>
+                    setProposalDraft(html === section.content ? null : html)
+                : onChangeRichText
+            }
             onAddSectionAfter={onAddSectionAfter}
           />
         </div>
@@ -2800,9 +3434,7 @@ function AnimatedLockButton({
 }) {
   const lockRef = useRef<LockIconHandle | null>(null);
   const openRef = useRef<LockOpenIconHandle | null>(null);
-  const dimensions = size === "header"
-    ? "h-8 w-8"
-    : "h-7 w-7";
+  const dimensions = size === "header" ? "h-8 w-8" : "h-7 w-7";
   const iconSize = size === "header" ? 14 : 16;
 
   return (
@@ -2828,7 +3460,7 @@ function AnimatedLockButton({
       }}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]",
-        dimensions
+        dimensions,
       )}
     >
       {locked ? (
@@ -2840,7 +3472,13 @@ function AnimatedLockButton({
   );
 }
 
-function HeaderLockButton({ locked, onToggle }: { locked: boolean; onToggle: () => void }) {
+function HeaderLockButton({
+  locked,
+  onToggle,
+}: {
+  locked: boolean;
+  onToggle: () => void;
+}) {
   // Two-button pattern, identical to the Activity button:
   // mobile renders an icon-only `size="icon-sm"` circle, desktop renders a
   // labelled `size="sm"` pill with the SAME className the Activity pill uses.
@@ -2869,10 +3507,16 @@ function HeaderLockButton({ locked, onToggle }: { locked: boolean; onToggle: () 
         size="icon-sm"
         aria-label={title}
         aria-pressed={locked}
-        style={{ borderRadius: 13, height: 32, width: 32, minHeight: 32, minWidth: 32 }}
+        style={{
+          borderRadius: 13,
+          height: 32,
+          width: 32,
+          minHeight: 32,
+          minWidth: 32,
+        }}
         className={cn(
           "border-[var(--creed-border)] bg-[var(--creed-surface)] md:hidden",
-          locked && "bg-[var(--creed-surface-raised)]"
+          locked && "bg-[var(--creed-surface-raised)]",
         )}
         onClick={() => trigger({ lock: mobileLockRef, open: mobileOpenRef })}
       >
@@ -2926,34 +3570,108 @@ function SectionLockButton({
   title: string;
   onToggle: () => void;
 }) {
-  return <AnimatedLockButton locked={locked} onToggle={onToggle} title={title} size="sm" />;
+  return (
+    <AnimatedLockButton
+      locked={locked}
+      onToggle={onToggle}
+      title={title}
+      size="sm"
+    />
+  );
+}
+
+// A person's profile picture in the activity feed (squircle, sized to match the
+// agent glyph), with an initials fallback. Agents keep their AgentIconStack.
+function ActivityActorAvatar({
+  avatarUrl,
+  initials,
+  name,
+}: {
+  avatarUrl?: string;
+  initials?: string;
+  name: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(avatarUrl) && !failed;
+  return (
+    <span className="ml-0.5 mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-[5px] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)]">
+      {showImage && avatarUrl ? (
+        <Image
+          src={avatarUrl}
+          alt=""
+          width={16}
+          height={16}
+          unoptimized
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className="h-4 w-4 rounded-[5px] object-cover"
+        />
+      ) : (
+        <span className="text-[8px] font-medium leading-none text-[var(--creed-text-secondary)]">
+          {initials || name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function ActivityRail({
   activity,
+  creedType,
   proposals,
   sections,
   open,
   onClose,
 }: {
   activity: ActivityEntry[];
+  creedType: "personal" | "company";
   proposals: Proposal[];
   sections: CreedSection[];
   open: boolean;
   onClose: () => void;
 }) {
-  const [statusFilter, setStatusFilter] = useState<"all" | ActivityStatus>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | ActivityStatus>(
+    "all",
+  );
   const [visibleCount, setVisibleCount] = useState(50);
 
   const livePendingProposalIds = useMemo(
-    () => new Set(proposals.filter((proposal) => proposal.status === "pending").map((proposal) => proposal.id)),
-    [proposals]
+    () =>
+      new Set(
+        proposals
+          .filter((proposal) => proposal.status === "pending")
+          .map((proposal) => proposal.id),
+      ),
+    [proposals],
   );
 
   const filteredAll = useMemo(
     () =>
       activity.filter((entry) => {
-        if (entry.status === "pending" && (!entry.proposalId || !livePendingProposalIds.has(entry.proposalId))) {
+        if (creedType !== "company" && entry.actorType !== "agent") {
+          return false;
+        }
+
+        if (
+          entry.status === "pending" &&
+          (!entry.proposalId || !livePendingProposalIds.has(entry.proposalId))
+        ) {
+          return false;
+        }
+
+        // Hide phantom edits: a direct edit whose before/after differ only by
+        // whitespace (someone bumped the spacebar and saved). These pre-date the
+        // no-op guard; new ones are never created. A rename (before === after
+        // exactly), a real edit, and delete/reorder (distinct labels) all stay.
+        const before = entry.beforeText ?? "";
+        const after = entry.afterText ?? "";
+        if (
+          entry.status === "direct" &&
+          before &&
+          after &&
+          before !== after &&
+          richTextContentEquivalent(before, after)
+        ) {
           return false;
         }
 
@@ -2963,7 +3681,7 @@ function ActivityRail({
 
         return true;
       }),
-    [activity, livePendingProposalIds, statusFilter]
+    [activity, creedType, livePendingProposalIds, statusFilter],
   );
 
   useEffect(() => {
@@ -2972,20 +3690,23 @@ function ActivityRail({
 
   const filtered = useMemo(
     () => filteredAll.slice(0, visibleCount),
-    [filteredAll, visibleCount]
+    [filteredAll, visibleCount],
   );
   const hasMore = filteredAll.length > visibleCount;
 
-  const grouped = filtered.reduce<Record<string, ActivityEntry[]>>((accumulator, entry) => {
-    const dayLabel = formatDayLabel(entry.createdAt, entry.dayLabel);
+  const grouped = filtered.reduce<Record<string, ActivityEntry[]>>(
+    (accumulator, entry) => {
+      const dayLabel = formatDayLabel(entry.createdAt, entry.dayLabel);
 
-    if (!accumulator[dayLabel]) {
-      accumulator[dayLabel] = [];
-    }
+      if (!accumulator[dayLabel]) {
+        accumulator[dayLabel] = [];
+      }
 
-    accumulator[dayLabel].push(entry);
-    return accumulator;
-  }, {});
+      accumulator[dayLabel].push(entry);
+      return accumulator;
+    },
+    {},
+  );
 
   return (
     <motion.aside
@@ -3001,7 +3722,7 @@ function ActivityRail({
       }}
       className={cn(
         "absolute inset-y-0 right-0 z-30 h-full overflow-hidden border-l border-[var(--creed-border)] bg-[var(--creed-surface)] shadow-[-18px_0_50px_rgba(28,28,26,0.12)] lg:static lg:h-full lg:shrink-0 lg:shadow-none",
-        open ? "pointer-events-auto" : "pointer-events-none"
+        open ? "pointer-events-auto" : "pointer-events-none",
       )}
       style={{
         maxWidth: "min(82vw, 356px)",
@@ -3014,7 +3735,9 @@ function ActivityRail({
               Activity
             </div>
             <div className="mt-1 text-[12px] text-[var(--creed-text-tertiary)]">
-              Audit trail for governed collaboration.
+              {creedType === "company"
+                ? "Audit trail for governed collaboration."
+                : "Agent changes to your Creed."}
             </div>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose}>
@@ -3049,41 +3772,46 @@ function ActivityRail({
           {filtered.length ? (
             <div className="pr-4">
               <div className="space-y-7">
-              {Object.entries(grouped).map(([dayLabel, entries]) => (
-                <div key={dayLabel}>
-                  <div className="mb-3 text-[12px] font-medium text-[var(--creed-text-tertiary)]">
-                    {dayLabel}
-                  </div>
-                  <div className="space-y-3">
-                    {entries.map((entry) => {
-                      // For pending entries we mirror the inline accept-all
-                      // card byte-for-byte: same existing content, same
-                      // `getProposalPreviewText` result. Without this, the
-                      // sidebar diff was off by 1–2 tokens because it used a
-                      // stale snapshot stored at proposal-creation time.
-                      const liveProposal = entry.proposalId
-                        ? proposals.find((proposal) => proposal.id === entry.proposalId)
-                        : undefined;
-                      const liveSection = sections.find((section) => section.id === entry.sectionId);
-                      const liveExistingContent =
-                        entry.status === "pending" ? liveSection?.content : undefined;
-                      const liveProposedText =
-                        entry.status === "pending" && liveProposal
-                          ? getProposalPreviewText(liveProposal.draft)
+                {Object.entries(grouped).map(([dayLabel, entries]) => (
+                  <div key={dayLabel}>
+                    <div className="mb-3 text-[12px] font-medium text-[var(--creed-text-tertiary)]">
+                      {dayLabel}
+                    </div>
+                    <div className="space-y-3">
+                      {entries.map((entry) => {
+                        // For pending entries we mirror the inline accept-all
+                        // card byte-for-byte: same existing content, same
+                        // `getProposalPreviewText` result. Without this, the
+                        // sidebar diff was off by 1–2 tokens because it used a
+                        // stale snapshot stored at proposal-creation time.
+                        const liveProposal = entry.proposalId
+                          ? proposals.find(
+                              (proposal) => proposal.id === entry.proposalId,
+                            )
                           : undefined;
-                      return (
-                        <ActivityRow
-                          key={entry.id}
-                          entry={entry}
-                          accent={liveSection?.accent ?? entry.accent}
-                          liveExistingContent={liveExistingContent}
-                          liveProposedText={liveProposedText}
-                        />
-                      );
-                    })}
+                        const liveSection = sections.find(
+                          (section) => section.id === entry.sectionId,
+                        );
+                        const liveExistingContent =
+                          entry.status === "pending"
+                            ? liveSection?.content
+                            : undefined;
+                        const liveProposedText =
+                          entry.status === "pending" && liveProposal
+                            ? getProposalPreviewText(liveProposal.draft)
+                            : undefined;
+                        return (
+                          <ActivityRow
+                            key={entry.id}
+                            entry={entry}
+                            liveExistingContent={liveExistingContent}
+                            liveProposedText={liveProposedText}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
               </div>
               {hasMore ? (
                 <div className="mt-3">
@@ -3100,7 +3828,9 @@ function ActivityRail({
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-[13px] text-[var(--creed-text-tertiary)]">
               <HistoryIcon size={20} className="opacity-60" />
-              <span className="font-medium opacity-60">Nothing here yet</span>
+              <span className="font-medium opacity-60">
+                {creedType === "company" ? "Nothing here yet" : "No agent activity yet"}
+              </span>
             </div>
           )}
         </ScrollArea>
@@ -3111,17 +3841,16 @@ function ActivityRail({
 
 function ActivityRow({
   entry,
-  accent,
   liveExistingContent,
   liveProposedText,
 }: {
   entry: ActivityEntry;
-  accent: CreedSection["accent"];
   liveExistingContent?: string;
   liveProposedText?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const agentNames = entry.actorType === "agent" ? uniqueAgentNames([entry.actor]) : [];
+  const agentNames =
+    entry.actorType === "agent" ? uniqueAgentNames([entry.actor]) : [];
 
   // Reuse the in-app diff machinery so activity cards match the inline
   // proposal diff exactly - same word-level highlighting, same +N/−N stats.
@@ -3132,7 +3861,7 @@ function ActivityRow({
   const afterForDiff = liveProposedText ?? entry.afterText ?? "";
   const diffParts = useMemo(
     () => computeDiffParts(beforeForDiff, afterForDiff),
-    [beforeForDiff, afterForDiff]
+    [beforeForDiff, afterForDiff],
   );
   const diffStats = useMemo(() => summarizeDiff(diffParts), [diffParts]);
   const hasTextualChange = diffParts.some((part) => part.added || part.removed);
@@ -3141,7 +3870,7 @@ function ActivityRow({
   // red wash felt heavy); we tint only the expanded diff body red below
   // so the deletion reads clearly when the user opens it.
   const isDeletionActivity =
-    entry.afterText.startsWith("Delete ") &&
+    (entry.afterText?.startsWith("Delete ") ?? false) &&
     (entry.beforeText?.startsWith("Keep ") ?? false);
 
   return (
@@ -3160,9 +3889,10 @@ function ActivityRow({
               itemClassName="h-4 w-4"
             />
           ) : (
-            <span
-              className="mt-1.5 h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: accentColorMap[accent] }}
+            <ActivityActorAvatar
+              avatarUrl={entry.avatarUrl}
+              initials={entry.avatarInitials}
+              name={entry.actor}
             />
           )}
           <div className="min-w-0 flex-1">
@@ -3170,13 +3900,18 @@ function ActivityRow({
               <div className="text-[13px] font-medium text-[var(--creed-text-primary)]">
                 {entry.sectionName}
               </div>
-              <span className={cn("rounded-[6px] px-2 py-0.5 text-[10px] font-medium", getProposalStatusStyles(entry.status))}>
+              <span
+                className={cn(
+                  "rounded-[6px] px-2 py-0.5 text-[10px] font-medium",
+                  getProposalStatusStyles(entry.status),
+                )}
+              >
                 {activityStatusLabelMap[entry.status]}
               </span>
               <ChevronDown
                 className={cn(
                   "h-3.5 w-3.5 text-[var(--creed-text-tertiary)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:text-[var(--creed-text-secondary)]",
-                  open ? "rotate-0" : "-rotate-90"
+                  open ? "rotate-0" : "-rotate-90",
                 )}
               />
             </div>

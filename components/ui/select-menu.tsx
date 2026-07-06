@@ -1,0 +1,86 @@
+"use client";
+
+import { Check, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+
+// A small, consistent single-select built on our DropdownMenu (never a native
+// <select>, which renders the OS control and breaks the design language). Used
+// for role / permission pickers across the Company UI.
+export type SelectMenuOption<T extends string> = { value: T; label: string };
+
+export function SelectMenu<T extends string>({
+  value,
+  options,
+  onChange,
+  className,
+  disabled,
+  align = "start",
+  placeholder = "Select",
+}: {
+  value: T;
+  options: SelectMenuOption<T>[];
+  onChange: (value: T) => void;
+  className?: string;
+  disabled?: boolean;
+  align?: "start" | "end";
+  // Shown on the trigger (muted) when nothing is selected. It is NOT a menu
+  // item, so it can never be picked and there's no way to deselect back to it.
+  placeholder?: string;
+}) {
+  const active = options.find((option) => option.value === value);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "inline-flex h-9 items-center justify-between gap-2 rounded-[12px] border border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[13px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] aria-expanded:bg-[var(--creed-surface-raised)] disabled:pointer-events-none disabled:opacity-60",
+            className,
+          )}
+        >
+          {/* Placeholder reads as normal text (not greyed) - the disabled
+              state alone (e.g. no members) dims the whole control. */}
+          <span className="truncate">{active?.label ?? placeholder}</span>
+          <ChevronDown
+            className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)]"
+            strokeWidth={2}
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align={align}
+        // Size to content (so short labels like "Member" never truncate), but
+        // never narrower than the trigger and never wider than a sensible cap.
+        className="w-auto min-w-[max(var(--radix-dropdown-menu-trigger-width),9rem)] max-w-[min(24rem,90vw)] border-[var(--creed-border)] bg-[var(--creed-surface)]"
+      >
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onSelect={(event) => {
+              event.preventDefault();
+              onChange(option.value);
+            }}
+            className="flex items-center justify-between gap-3 text-[13px]"
+          >
+            <span className="truncate text-[var(--creed-text-primary)]">
+              {option.label}
+            </span>
+            {option.value === value ? (
+              <Check
+                className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-secondary)]"
+                strokeWidth={1.8}
+              />
+            ) : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

@@ -3,17 +3,15 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Check, ChevronDown, Download, FileText, LoaderCircle, Plus, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Download, FileText, LoaderCircle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { AnimatedCheckmark } from "@/components/ui/animated-checkmark";
 import { ArrowRightIcon } from "@/components/ui/arrow-right";
-import { CopyIcon } from "@/components/ui/copy";
 import { Textarea } from "@/components/ui/textarea";
 import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
 import { useCreed } from "@/components/creed/creed-provider";
-import { AnimatedIconButton } from "@/components/creed/animated-icon-action";
+import { ComposePromptCard } from "@/components/creed/compose-prompt-card";
 import { AgentIconStack } from "@/components/creed/agent-icon-stack";
 import {
   DiffBadge,
@@ -427,45 +425,7 @@ export function OnboardingScreen({
                         </p>
                       </AnimatedBlock>
                       <AnimatedBlock index={2}>
-                        <div className="mx-auto mt-9 flex w-full max-w-lg flex-col rounded-[14px] border border-[var(--creed-border)] bg-[var(--creed-surface)] p-5 text-left">
-                          <div className="flex flex-wrap items-center gap-2.5">
-                            {PROMPT_GLYPH_KINDS.map((kind) => (
-                              <IntegrationGlyph
-                                key={kind}
-                                kind={kind}
-                                framed={false}
-                                className="h-8 w-8 shrink-0"
-                                assetClassName="h-8 w-8"
-                              />
-                            ))}
-                            <Plus
-                              strokeWidth={2}
-                              className="h-8 w-8 shrink-0 p-[7px] text-[var(--creed-text-primary)]"
-                            />
-                          </div>
-                          <p className="mt-4 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-                            Paste this prompt into any AI. It replies with a markdown Creed you paste
-                            back into Creed on the next page.
-                          </p>
-                          <div className="mt-4">
-                            <AnimatedIconButton
-                              type="button"
-                              icon={CopyIcon}
-                              showIcon={!promptCopied}
-                              className="creed-copy-cycle min-w-[116px] justify-center rounded-md px-4 text-white"
-                              onClick={() => void handleCopyPrompt()}
-                            >
-                              {promptCopied ? (
-                                <>
-                                  <AnimatedCheckmark className="h-4 w-4" size={16} />
-                                  Copied
-                                </>
-                              ) : (
-                                "Copy prompt"
-                              )}
-                            </AnimatedIconButton>
-                          </div>
-                        </div>
+                        <ComposePromptCard copied={promptCopied} onCopy={() => void handleCopyPrompt()} />
                       </AnimatedBlock>
                     </div>
                   ) : null}
@@ -646,21 +606,6 @@ function OnboardingStep({
 // step 0 renders (AnimatePresence keys on step), so the draw-in replays on
 // every visit. Lines and chips animate in; a dot travels each line inward.
 // ──────────────────────────────────────────────────────────────────
-
-// The agent glyphs shown on the prompt step, declared once (typed, no inline
-// cast). Kept next to CONSTELLATION_NODES so the two agent lists sit together.
-const PROMPT_GLYPH_KINDS: AgentIconKind[] = [
-  "chatgpt",
-  "claude",
-  "claudecode",
-  "codex",
-  "cursor",
-  "replit",
-  "grok",
-  "hermes",
-  "openclaw",
-  "opencode",
-];
 
 const CONSTELLATION_NODES: { kind: AgentIconKind; x: number; y: number }[] = [
   { kind: "chatgpt", x: 50, y: 9 },

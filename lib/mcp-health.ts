@@ -124,9 +124,18 @@ function resolveAccent(accent: string): string {
   return isAccentKey(accent) ? accentColorMap[accent] : "var(--accent-color-mono)";
 }
 
+// Which rows the dashboard aggregates. Personal Creeds scope by the owning
+// user (byte-identical to the original behaviour); company Creeds scope by
+// creed_id so a team's dashboard shows only that team's agents, reads, and
+// proposal outcomes - never the viewer's personal MCP activity. A fresh team
+// has no creed_id-stamped rows yet, so it correctly shows zero.
+export type McpHealthScope =
+  | { kind: "user"; userId: string }
+  | { kind: "creed"; creedId: string };
+
 export async function loadMcpHealth(
   client: unknown,
-  userId: string,
+  scope: McpHealthScope,
   range: McpHealthRange
 ): Promise<McpHealthSummary> {
   const db = client as unknown as SupabaseLike;
@@ -134,10 +143,13 @@ export async function loadMcpHealth(
   const windowStart = window[0];
   const windowStartIso = `${windowStart}T00:00:00.000Z`;
 
+  const [scopeColumn, scopeValue] =
+    scope.kind === "creed" ? (["creed_id", scope.creedId] as const) : (["user_id", scope.userId] as const);
+
   const [readEvents, clients, activity] = await Promise.all([
-    db.from("creed_mcp_read_events").select("client_id, day, read_count").eq("user_id", userId).gte("day", windowStart),
-    db.from("creed_mcp_clients").select("client_id, client_name, last_seen_at, created_at").eq("user_id", userId).gte("created_at", "1970-01-01"),
-    db.from("creed_activity").select("actor, actor_type, section_id, section_name, accent, status, created_at").eq("user_id", userId).gte("created_at", windowStartIso),
+    db.from("creed_mcp_read_events").select("client_id, day, read_count").eq(scopeColumn, scopeValue).gte("day", windowStart),
+    db.from("creed_mcp_clients").select("client_id, client_name, last_seen_at, created_at").eq(scopeColumn, scopeValue).gte("created_at", "1970-01-01"),
+    db.from("creed_activity").select("actor, actor_type, section_id, section_name, accent, status, created_at").eq(scopeColumn, scopeValue).gte("created_at", windowStartIso),
   ]);
 
   const readRows = (readEvents.data as ReadEventRow[] | null) ?? [];

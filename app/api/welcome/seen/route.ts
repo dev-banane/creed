@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { markEntitlementWelcomed } from "@/lib/stripe";
+import { markEntitlementWelcomed, markCompanyWelcomed } from "@/lib/stripe";
+import { resolveOwnedCompanyCreedId } from "@/lib/creed-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
@@ -36,7 +37,16 @@ export async function POST() {
   }
 
   try {
-    await markEntitlementWelcomed(user.id);
+    // Inside a company Creed the caller owns, the tour is the company variant,
+    // gated on the company billing row - mark that. Otherwise mark the personal
+    // entitlement. resolveOwnedCompanyCreedId is null for members and personal
+    // Creeds, so their path is unchanged.
+    const ownedCompanyId = await resolveOwnedCompanyCreedId(supabase, user);
+    if (ownedCompanyId) {
+      await markCompanyWelcomed(ownedCompanyId);
+    } else {
+      await markEntitlementWelcomed(user.id);
+    }
   } catch {
     // Swallow: the localStorage mirror covers this device and the next
     // dismiss retries. Never surface an error for a cosmetic write.

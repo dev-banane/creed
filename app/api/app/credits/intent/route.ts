@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { MAX_TOPUP_USD, MIN_TOPUP_USD } from "@/lib/ai/credit-config";
 import { getStripeClient, getStripePublishableKey } from "@/lib/stripe";
 import { requireApiAuth } from "@/lib/api-auth";
+import { resolveOwnedCompanyCreedId } from "@/lib/creed-context";
 
 // Creates a Stripe PaymentIntent for a prepaid credits top-up. The client
 // confirms it with the Payment Element; the balance is credited only by the
@@ -25,6 +26,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // An owner topping up the active company Creed tags the PaymentIntent with
+    // the company creed_id, so crediting lands in the pooled company balance.
+    const companyId = await resolveOwnedCompanyCreedId(auth.supabase, auth.user);
+
     const stripe = getStripeClient();
     const intent = await stripe.paymentIntents.create({
       amount: Math.round(amountUsd * 100),
@@ -33,7 +38,8 @@ export async function POST(request: Request) {
       metadata: {
         supabaseUserId: auth.user.id,
         type: "credits",
-        product: "creed_credits",
+        product: companyId ? "company_credits" : "personal_credits",
+        ...(companyId ? { creedId: companyId } : {}),
       },
     });
 

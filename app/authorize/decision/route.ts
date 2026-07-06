@@ -5,7 +5,9 @@ import {
   getOAuthClient,
   isAllowedRedirectUri,
   issueAuthorizationCode,
+  type CreedGrant,
 } from "@/lib/oauth";
+import { listUserCreeds } from "@/lib/creed-membership";
 import { hasActiveEntitlement } from "@/lib/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -95,12 +97,29 @@ export async function POST(request: Request) {
     : allowedScopes;
   const scope = (grantedScopes.length ? grantedScopes : allowedScopes).join(" ");
 
+  // Which Creed this agent may reach. One connection reaches exactly one Creed
+  // (single-select, like scoping a Supabase token to one project). The consent
+  // form posts the chosen id, but hidden fields are attacker-controllable, so we
+  // re-derive the user's real Creeds and keep the chosen one only if they belong
+  // to it. Fall back to the personal Creed, then the first Creed, so an entitled
+  // user (solo, with no picker) always gets a grant for a space they belong to.
+  // The coarse per-connection mode is not enforced - edit rights are decided per
+  // section at write time - so grant "direct" and let the section rules govern.
+  const requestedCreedId = String(form.get("creed_grant") ?? "").trim();
+  const creeds = await listUserCreeds(supabase, user.id);
+  const target =
+    creeds.find((c) => c.id === requestedCreedId) ??
+    creeds.find((c) => c.type === "personal") ??
+    creeds[0];
+  const creedGrants: CreedGrant[] = target ? [{ creedId: target.id, mode: "direct" }] : [];
+
   const code = await issueAuthorizationCode({
     clientId,
     userId: user.id,
     redirectUri,
     codeChallenge,
     scope,
+    creedGrants,
   });
 
   return redirectWith(redirectUri, {

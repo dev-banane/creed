@@ -123,10 +123,13 @@ export function McpHealthDashboard() {
   const [range, setRange] = useState<McpHealthRange>("30d");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [metric, setMetric] = useState<ChartMetric>("all");
+  // Scope the client cache to the active Creed so switching Creeds never shows
+  // the previous one's dashboard. Empty string = personal/active Creed.
+  const creedKey = state.creedId ?? "";
   // Seed from the cache the shell preloads, so the dashboard renders instantly
   // when the data is already warm instead of flashing a loading state.
-  const [summary, setSummary] = useState<HealthSummary | null>(() => getCachedMcpHealth(range));
-  const [loading, setLoading] = useState(() => !getCachedMcpHealth(range));
+  const [summary, setSummary] = useState<HealthSummary | null>(() => getCachedMcpHealth(range, creedKey));
+  const [loading, setLoading] = useState(() => !getCachedMcpHealth(range, creedKey));
   const [activeSection, setActiveSection] = useState<number | null>(null);
 
   const mcpClientCount = state.mcpClients.length;
@@ -149,14 +152,15 @@ export function McpHealthDashboard() {
   useEffect(() => {
     let active = true;
     // Show cached data immediately if we have it, then revalidate.
-    const cached = getCachedMcpHealth(range);
+    const cached = getCachedMcpHealth(range, creedKey);
     if (cached) {
       setSummary(cached);
       setLoading(false);
     } else {
+      setSummary(null);
       setLoading(true);
     }
-    loadMcpHealth(range)
+    loadMcpHealth(range, creedKey)
       .then((health) => {
         if (active && health) {
           setSummary(health);
@@ -169,8 +173,8 @@ export function McpHealthDashboard() {
     return () => {
       active = false;
     };
-    // Re-fetch on range change and whenever a new agent shows up via polling.
-  }, [range, mcpClientCount]);
+    // Re-fetch on range change, Creed switch, and whenever a new agent shows up.
+  }, [range, creedKey, mcpClientCount]);
 
   // Keep the agent filter valid if the roster changes between fetches.
   useEffect(() => {
@@ -321,6 +325,7 @@ export function McpHealthDashboard() {
           <Dropdown
             trigger={selectedAgent ? agentLabel(selectedAgent) : "All agents"}
             triggerIcon={selectedAgent ? selectedAgent.icon : "mcp"}
+            disabled={(summary?.agents.length ?? 0) === 0}
             items={[
               { key: "all", label: "All agents", icon: "mcp" as AgentIconKind },
               ...(summary?.agents ?? []).map((agent) => ({
@@ -554,6 +559,7 @@ function Dropdown({
   align,
   variant = "outline",
   menuWidthClass = "min-w-40",
+  disabled = false,
 }: {
   trigger: string;
   triggerIcon?: AgentIconKind;
@@ -564,14 +570,16 @@ function Dropdown({
   align?: "start" | "end";
   variant?: "outline" | "ghost";
   menuWidthClass?: string;
+  disabled?: boolean;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           className={cn(
-            "inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)]",
+            "inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] disabled:pointer-events-none disabled:opacity-60",
             variant === "outline"
               ? "border border-[var(--creed-border)] bg-[var(--creed-surface)]"
               : "-ml-1 text-[14px] font-medium text-[var(--creed-text-secondary)]"

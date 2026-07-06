@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { entitlementGrantsAccess } from "@/lib/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { resolveOwnedCompanyCreedId } from "@/lib/creed-context";
+import { getCompanyBilling } from "@/lib/company-billing";
+import { deriveCompanyAccessState } from "@/lib/creed-permissions";
+import { hasCompanyAccess, listUserCreeds } from "@/lib/creed-membership";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Billing status for the current user.
 //
@@ -32,6 +37,17 @@ type StatusPayload = {
   status: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  personal?: PlanStatus;
+  companyOwner?: (PlanStatus & { creedId: string; name: string }) | null;
+};
+
+type PlanStatus = {
+  paid: boolean;
+  billingMode: string | null;
+  interval: string | null;
+  status: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
 };
 
 const NO_ACCESS: StatusPayload = {
@@ -42,7 +58,24 @@ const NO_ACCESS: StatusPayload = {
   status: null,
   currentPeriodEnd: null,
   cancelAtPeriodEnd: false,
+  personal: undefined,
+  companyOwner: null,
 };
+
+function legacyPayloadFromPlan(
+  plan: string | null,
+  status: PlanStatus | null,
+): Omit<StatusPayload, "personal" | "companyOwner"> {
+  return {
+    paid: Boolean(status?.paid),
+    plan,
+    billingMode: status?.billingMode ?? null,
+    interval: status?.interval ?? null,
+    status: status?.status ?? null,
+    currentPeriodEnd: status?.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: Boolean(status?.cancelAtPeriodEnd),
+  };
+}
 
 export async function GET() {
   if (!isSupabaseConfigured()) {
@@ -99,19 +132,60 @@ export async function GET() {
     row = core.data as EntitlementRead | null;
   }
 
-  if (!row) {
-    return NextResponse.json(NO_ACCESS, { headers: NO_STORE_HEADERS });
-  }
+  const personal: PlanStatus | undefined = row
+    ? {
+        paid: entitlementGrantsAccess(row),
+        billingMode: row.billing_mode ?? null,
+        interval: row.billing_interval ?? null,
+        status: row.status ?? null,
+        currentPeriodEnd: row.current_period_end ?? null,
+        cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+      }
+    : undefined;
+
+  const ownedCompany = (await listUserCreeds(supabase, user.id)).find(
+    (creed) => creed.type === "company" && creed.role === "owner",
+  );
+  const billing = ownedCompany ? await getCompanyBilling(ownedCompany.id) : null;
+  const companyOwner: (PlanStatus & { creedId: string; name: string }) | null =
+    ownedCompany && billing
+      ? {
+          creedId: ownedCompany.id,
+          name: ownedCompany.name,
+          paid: deriveCompanyAccessState(billing.status) !== "frozen",
+          billingMode: billing.billing_mode ?? null,
+          interval: billing.billing_interval ?? null,
+          status: billing.status ?? null,
+          currentPeriodEnd: billing.current_period_end ?? null,
+          cancelAtPeriodEnd: Boolean(billing.cancel_at_period_end),
+        }
+      : null;
+
+  const activeCompanyId = await resolveOwnedCompanyCreedId(supabase, user);
+  const legacyBase =
+    activeCompanyId && companyOwner?.creedId === activeCompanyId
+      ? legacyPayloadFromPlan("company", companyOwner)
+      : legacyPayloadFromPlan(row?.plan ?? null, personal ?? null);
 
   const payload: StatusPayload = {
-    paid: entitlementGrantsAccess(row),
-    plan: row.plan ?? null,
-    billingMode: row.billing_mode ?? null,
-    interval: row.billing_interval ?? null,
-    status: row.status ?? null,
-    currentPeriodEnd: row.current_period_end ?? null,
-    cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+    ...legacyBase,
+    personal,
+    companyOwner,
   };
+
+  // A company MEMBER (not owner) has app access through the team but no personal
+  // entitlement. Keep the legacy paid flag true for shared marketing chrome and
+  // app gates, but do not set companyOwner above; pricing must not show member
+  // access as owned billing.
+  if (!payload.paid) {
+    const admin = getSupabaseAdminClient();
+    if (await hasCompanyAccess(supabase, admin, user.id)) {
+      return NextResponse.json(
+        { ...NO_ACCESS, paid: true, plan: "company" },
+        { headers: NO_STORE_HEADERS },
+      );
+    }
+  }
 
   return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
 }

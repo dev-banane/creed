@@ -2,12 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import { ChevronDownIcon as AnimatedChevronDown } from "@/components/ui/chevron-down";
 import type { Proposal } from "@/lib/creed-data";
 import { getProposalPreviewText } from "@/lib/creed-data";
-import { DiffBadge, computeDiffParts, summarizeDiff } from "@/components/creed/inline-proposal-diff";
-import { AgentIconStack } from "@/components/creed/agent-icon-stack";
+import {
+  DiffBadge,
+  computeDiffParts,
+  summarizeDiff,
+  ProposalAuthor,
+} from "@/components/creed/inline-proposal-diff";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +39,8 @@ export type ReviewPillProposal = {
   proposal: Proposal;
   existingContent: string;
   sectionName?: string;
+  // Whether THIS viewer can review (accept/reject) this proposal's section.
+  canReview?: boolean;
 };
 
 export function ReviewPill({
@@ -43,6 +49,8 @@ export function ReviewPill({
   onRejectAll,
   onAcceptOne,
   onRejectOne,
+  onEditOne = () => {},
+  onDeleteOne = () => {},
   onJumpToProposal,
 }: {
   proposals: ReviewPillProposal[];
@@ -50,8 +58,16 @@ export function ReviewPill({
   onRejectAll: () => void;
   onAcceptOne: (proposalId: string) => void;
   onRejectOne: (proposalId: string) => void;
+  // The proposal's own author edits/deletes it instead of reviewing.
+  onEditOne?: (proposal: Proposal) => void;
+  onDeleteOne?: (proposalId: string) => void;
   onJumpToProposal: (proposal: Proposal) => void;
 }) {
+  // A member with only their own (unreviewable) proposals shouldn't see the
+  // bulk Accept/Reject-all controls - those act on proposals you can review.
+  const hasReviewable = proposals.some(
+    (item) => item.canReview && !item.proposal.mine,
+  );
   const perProposalStats = useMemo(() => {
     return proposals.map((item) => {
       const proposed = getProposalPreviewText(item.proposal.draft);
@@ -139,7 +155,9 @@ export function ReviewPill({
             <span>
               <span className="sm:hidden">{proposals.length}</span>
               <span className="hidden sm:inline">
-                {proposals.length === 1 ? "1 proposal" : `${proposals.length} proposals`}
+                {proposals.length === 1
+                  ? "1 proposal"
+                  : `${proposals.length} proposals`}
               </span>
             </span>
             <AnimatedChevronDown
@@ -194,27 +212,35 @@ export function ReviewPill({
                   onJumpToProposal={onJumpToProposal}
                   onAcceptOne={onAcceptOne}
                   onRejectOne={onRejectOne}
+                  onEditOne={onEditOne}
+                  onDeleteOne={onDeleteOne}
                 />
               );
             }
-            const isDeleteProposal = item.proposal.draft.kind === "delete-section";
-            const isNewSectionProposal = item.proposal.draft.kind === "new-section";
+            const isDeleteProposal =
+              item.proposal.draft.kind === "delete-section";
+            const isNewSectionProposal =
+              item.proposal.draft.kind === "new-section";
             return (
               <DropdownMenuSub key={item.proposal.id}>
                 <DropdownMenuSubTrigger className="group/sub rounded-[var(--radius-md)] px-2 py-1.5 text-sm hover:bg-[var(--creed-surface-raised)] [&>svg:last-of-type]:hidden">
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <AgentIconStack
-                      agents={[item.proposal.agentName]}
-                      variant="inline"
-                      itemClassName="h-5 w-5"
-                      maxVisible={1}
+                    <ProposalAuthor
+                      authorType={item.proposal.authorType}
+                      avatarUrl={item.proposal.authorAvatarUrl}
+                      initials={item.proposal.authorInitials}
+                      agentName={item.proposal.agentName}
                     />
                     <span className="min-w-0 flex-1 truncate font-medium text-[var(--creed-text-primary)]">
                       {item.sectionName ?? item.proposal.sectionName}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <DiffBadge tone="added" count={stats.added} size="md" />
-                      <DiffBadge tone="removed" count={stats.removed} size="md" />
+                      <DiffBadge
+                        tone="removed"
+                        count={stats.removed}
+                        size="md"
+                      />
                     </span>
                     <AnimatedChevronDown
                       size={14}
@@ -226,109 +252,142 @@ export function ReviewPill({
                   </div>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
-                <DropdownMenuSubContent
-                  sideOffset={12}
-                  alignOffset={-4}
-                  // Pseudo-element bridges the 12px sideOffset gap so the
-                  // cursor can travel from the row in the parent dropdown
-                  // into this side panel without triggering close.
-                  className="relative w-[320px] border-[var(--creed-border)] bg-[var(--creed-surface)] p-0 before:pointer-events-auto before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-4 before:content-['']"
-                  onMouseEnter={isMobile ? undefined : cancelClose}
-                  onMouseLeave={isMobile ? undefined : scheduleClose}
-                >
-                  <div className="flex items-center justify-between gap-2 border-b border-[var(--creed-border)] px-3 py-2 text-sm text-[var(--creed-text-secondary)]">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <AgentIconStack
-                        agents={[item.proposal.agentName]}
-                        variant="inline"
-                        itemClassName="h-5 w-5"
-                        maxVisible={1}
-                      />
-                      <span className="truncate font-medium text-[var(--creed-text-primary)]">
-                        {item.proposal.agentName}
+                  <DropdownMenuSubContent
+                    sideOffset={12}
+                    alignOffset={-4}
+                    // Pseudo-element bridges the 12px sideOffset gap so the
+                    // cursor can travel from the row in the parent dropdown
+                    // into this side panel without triggering close.
+                    className="relative w-[320px] border-[var(--creed-border)] bg-[var(--creed-surface)] p-0 before:pointer-events-auto before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-4 before:content-['']"
+                    onMouseEnter={isMobile ? undefined : cancelClose}
+                    onMouseLeave={isMobile ? undefined : scheduleClose}
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-[var(--creed-border)] px-3 py-2 text-sm text-[var(--creed-text-secondary)]">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <ProposalAuthor
+                          authorType={item.proposal.authorType}
+                          avatarUrl={item.proposal.authorAvatarUrl}
+                          initials={item.proposal.authorInitials}
+                          agentName={item.proposal.agentName}
+                        />
+                        <span className="truncate font-medium text-[var(--creed-text-primary)]">
+                          {item.proposal.agentName}
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1">
+                        <DiffBadge tone="added" count={stats.added} size="md" />
+                        <DiffBadge
+                          tone="removed"
+                          count={stats.removed}
+                          size="md"
+                        />
                       </span>
                     </div>
-                    <span className="inline-flex items-center gap-1">
-                      <DiffBadge tone="added" count={stats.added} size="md" />
-                      <DiffBadge tone="removed" count={stats.removed} size="md" />
-                    </span>
-                  </div>
-                  <div className="creed-diff-block max-h-[200px] overflow-y-auto px-3 py-2 text-[12px] leading-5">
-                    {isDeleteProposal ? (
-                      // Style the Delete line as a removal - same red
-                      // background + strikethrough as the diff machinery's
-                      // `creed-diff-remove` so the affordance is consistent
-                      // with how removed text is already shown elsewhere.
-                      <span className="creed-diff-remove">
-                        Delete {item.sectionName ?? item.proposal.sectionName}
-                      </span>
-                    ) : stats.parts.length === 0 ? (
-                      <span className="text-[var(--creed-text-tertiary)]">No textual change</span>
-                    ) : (
-                      stats.parts.map((part, i) => {
-                        if (part.added) {
-                          return (
-                            <span key={i} className="creed-diff-add">
-                              {part.value}
-                            </span>
-                          );
-                        }
-                        if (part.removed) {
-                          return (
-                            <span key={i} className="creed-diff-remove">
-                              {part.value}
-                            </span>
-                          );
-                        }
-                        return <span key={i}>{part.value}</span>;
-                      })
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between gap-1 border-t border-[var(--creed-border)] px-2 py-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Close immediately so the smooth scroll is the
-                        // only thing the page is doing - and so the
-                        // dropdown unmount can't fight the scroll.
-                        cancelClose();
-                        setOpen(false);
-                        onJumpToProposal(item.proposal);
-                      }}
-                      className="inline-flex h-7 items-center rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                    >
-                      Jump to section
-                    </button>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => onRejectOne(item.proposal.id)}
-                        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onAcceptOne(item.proposal.id)}
-                        className={cn(
-                          "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium text-white transition-colors",
-                          // Accept colour reflects intent for structural
-                          // operations: red for delete-section, green for
-                          // new-section, default blue for content updates.
-                          isDeleteProposal
-                            ? "bg-[#dc2626] hover:bg-[#b91c1c]"
-                            : isNewSectionProposal
-                              ? "bg-[#16A34A] hover:bg-[#15803d]"
-                              : "bg-[#2563eb] hover:bg-[#1d4ed8]"
-                        )}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        Accept
-                      </button>
+                    <div className="creed-diff-block max-h-[200px] overflow-y-auto px-3 py-2 text-[12px] leading-5">
+                      {isDeleteProposal ? (
+                        // Style the Delete line as a removal - same red
+                        // background + strikethrough as the diff machinery's
+                        // `creed-diff-remove` so the affordance is consistent
+                        // with how removed text is already shown elsewhere.
+                        <span className="creed-diff-remove">
+                          Delete {item.sectionName ?? item.proposal.sectionName}
+                        </span>
+                      ) : stats.parts.length === 0 ? (
+                        <span className="text-[var(--creed-text-tertiary)]">
+                          No textual change
+                        </span>
+                      ) : (
+                        stats.parts.map((part, i) => {
+                          if (part.added) {
+                            return (
+                              <span key={i} className="creed-diff-add">
+                                {part.value}
+                              </span>
+                            );
+                          }
+                          if (part.removed) {
+                            return (
+                              <span key={i} className="creed-diff-remove">
+                                {part.value}
+                              </span>
+                            );
+                          }
+                          return <span key={i}>{part.value}</span>;
+                        })
+                      )}
                     </div>
-                  </div>
-                </DropdownMenuSubContent>
+                    <div className="flex items-center justify-between gap-1 border-t border-[var(--creed-border)] px-2 py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Close immediately so the smooth scroll is the
+                          // only thing the page is doing - and so the
+                          // dropdown unmount can't fight the scroll.
+                          cancelClose();
+                          setOpen(false);
+                          onJumpToProposal(item.proposal);
+                        }}
+                        className="inline-flex h-7 items-center rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                      >
+                        Jump to section
+                      </button>
+                      {item.proposal.mine ? (
+                        // Author's own proposal: edit (jump back to continue) or
+                        // delete it - they never approve their own.
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              cancelClose();
+                              setOpen(false);
+                              onEditOne(item.proposal);
+                            }}
+                            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteOne(item.proposal.id)}
+                            className="inline-flex h-7 items-center gap-1 rounded-md bg-[#DC2626] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#B91C1C]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      ) : item.canReview ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => onRejectOne(item.proposal.id)}
+                            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onAcceptOne(item.proposal.id)}
+                            className={cn(
+                              "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium text-white transition-colors",
+                              // Accept colour reflects intent for structural
+                              // operations: red for delete-section, green for
+                              // new-section, default blue for content updates.
+                              isDeleteProposal
+                                ? "bg-[#dc2626] hover:bg-[#b91c1c]"
+                                : isNewSectionProposal
+                                  ? "bg-[#16A34A] hover:bg-[#15803d]"
+                                  : "bg-[#2563eb] hover:bg-[#1d4ed8]",
+                            )}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Accept
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </DropdownMenuSubContent>
                 </DropdownMenuPortal>
               </DropdownMenuSub>
             );
@@ -336,25 +395,30 @@ export function ReviewPill({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Reject/Accept all buttons follow the per-proposal expansion list */}
-      <button
-        type="button"
-        onClick={onRejectAll}
-        aria-label="Reject all"
-        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-      >
-        <X className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Reject all</span>
-      </button>
-      <button
-        type="button"
-        onClick={onAcceptAll}
-        aria-label="Accept all"
-        className="inline-flex h-7 items-center gap-1 rounded-md bg-[#2563eb] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1d4ed8]"
-      >
-        <Check className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Accept all</span>
-      </button>
+      {/* Reject/Accept all only when the viewer has proposals they can review
+          (a member seeing only their own proposals can't bulk-approve). */}
+      {hasReviewable ? (
+        <>
+          <button
+            type="button"
+            onClick={onRejectAll}
+            aria-label="Reject all"
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+          >
+            <X className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Reject all</span>
+          </button>
+          <button
+            type="button"
+            onClick={onAcceptAll}
+            aria-label="Accept all"
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-[#2563eb] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1d4ed8]"
+          >
+            <Check className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Accept all</span>
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -365,12 +429,20 @@ function ReviewPillItem({
   onJumpToProposal,
   onAcceptOne,
   onRejectOne,
+  onEditOne,
+  onDeleteOne,
 }: {
   item: ReviewPillProposal;
-  stats: { added: number; removed: number; parts: ReturnType<typeof computeDiffParts> };
+  stats: {
+    added: number;
+    removed: number;
+    parts: ReturnType<typeof computeDiffParts>;
+  };
   onJumpToProposal: (proposal: Proposal) => void;
   onAcceptOne: (proposalId: string) => void;
   onRejectOne: (proposalId: string) => void;
+  onEditOne: (proposal: Proposal) => void;
+  onDeleteOne: (proposalId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const isDeleteProposal = item.proposal.draft.kind === "delete-section";
@@ -391,14 +463,14 @@ function ReviewPillItem({
         <ChevronDown
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)] transition-transform duration-200",
-            open ? "rotate-0" : "-rotate-90"
+            open ? "rotate-0" : "-rotate-90",
           )}
         />
-        <AgentIconStack
-          agents={[item.proposal.agentName]}
-          variant="inline"
-          itemClassName="h-4 w-4"
-          maxVisible={1}
+        <ProposalAuthor
+          authorType={item.proposal.authorType}
+          avatarUrl={item.proposal.authorAvatarUrl}
+          initials={item.proposal.authorInitials}
+          agentName={item.proposal.agentName}
         />
         <span className="min-w-0 flex-1 truncate font-medium text-[var(--creed-text-primary)]">
           {item.sectionName ?? item.proposal.sectionName}
@@ -426,7 +498,9 @@ function ReviewPillItem({
                   Delete {item.sectionName ?? item.proposal.sectionName}
                 </span>
               ) : stats.parts.length === 0 ? (
-                <span className="text-[var(--creed-text-tertiary)]">No textual change</span>
+                <span className="text-[var(--creed-text-tertiary)]">
+                  No textual change
+                </span>
               ) : (
                 stats.parts.map((part, i) => {
                   if (part.added) {
@@ -459,39 +533,68 @@ function ReviewPillItem({
               >
                 Jump
               </button>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onRejectOne(item.proposal.id);
-                  }}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-black/[0.06] hover:text-[var(--creed-text-primary)] dark:hover:bg-white/[0.08]"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onAcceptOne(item.proposal.id);
-                  }}
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium text-white transition-colors",
-                    isDeleteProposal
-                      ? "bg-[#dc2626] hover:bg-[#b91c1c]"
-                      : isNewSectionProposal
-                        ? "bg-[#16A34A] hover:bg-[#15803d]"
-                        : "bg-[#2563eb] hover:bg-[#1d4ed8]"
-                  )}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Accept
-                </button>
-              </div>
+              {item.proposal.mine ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onEditOne(item.proposal);
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-black/[0.06] hover:text-[var(--creed-text-primary)] dark:hover:bg-white/[0.08]"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onDeleteOne(item.proposal.id);
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-[#DC2626] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[#B91C1C]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </div>
+              ) : item.canReview ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRejectOne(item.proposal.id);
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-black/[0.06] hover:text-[var(--creed-text-primary)] dark:hover:bg-white/[0.08]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onAcceptOne(item.proposal.id);
+                    }}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium text-white transition-colors",
+                      isDeleteProposal
+                        ? "bg-[#dc2626] hover:bg-[#b91c1c]"
+                        : isNewSectionProposal
+                          ? "bg-[#16A34A] hover:bg-[#15803d]"
+                          : "bg-[#2563eb] hover:bg-[#1d4ed8]",
+                    )}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Accept
+                  </button>
+                </div>
+              ) : null}
             </div>
           </motion.div>
         ) : null}

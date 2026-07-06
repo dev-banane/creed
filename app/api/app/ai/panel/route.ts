@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { resolveAiCredential, deductCredits } from "@/lib/ai/credits";
+import {
+  resolveAiCredential,
+  deductCredits,
+  resolveCompanyAiCredential,
+  deductCompanyCredits,
+} from "@/lib/ai/credits";
 import { callOpenRouter, parseJsonObject } from "@/lib/ai/openrouter";
 import { recordAiUsage } from "@/lib/ai/persistence";
+import { resolveActiveCreed } from "@/lib/creed-context";
+import { loadActiveCreedState } from "@/lib/creed-backend";
 import {
   buildAskMessages,
   buildPanelResponseFormat,
@@ -15,7 +22,6 @@ import {
   type PanelSectionSummary,
   type PanelTurn,
 } from "@/lib/panel/actions";
-import { loadCreedState } from "@/lib/creed-backend";
 import { permissionIsReadable, sectionBodyMarkdown } from "@/lib/creed-data";
 
 // Panel's Search + Ask resolve in a single fast call; a minute is generous
@@ -57,7 +63,18 @@ export async function POST(request: Request) {
     // what to look at (query, mentions, history). Hidden and archived sections
     // are excluded here, so the confidentiality boundary holds regardless of
     // what the caller sends.
-    const { state } = await loadCreedState(auth.supabase, auth.user, { activityLimit: 1 });
+    // Load the active Creed (personal or company). Company state is
+    // permission-filtered (Hidden sections already stripped) so the panel
+    // respects the member's access, and AI meters on the company's credits.
+    const active = await resolveActiveCreed(auth.supabase, auth.user);
+    const companyId =
+      active && active.creeds.find((c) => c.id === active.creedId)?.type === "company"
+        ? active.creedId
+        : null;
+    const { state } = await loadActiveCreedState(auth.supabase, auth.user, active);
+    if (companyId && state.company?.accessState === "frozen") {
+      return NextResponse.json({ error: "This company Creed is read-only until billing is fixed." }, { status: 403 });
+    }
     const sections: PanelSectionSummary[] = state.sections
       .filter((section) => !section.archived && permissionIsReadable(section.agentPermission))
       .map((section) => ({
@@ -98,7 +115,9 @@ export async function POST(request: Request) {
             },
           ];
 
-    const credential = await resolveAiCredential(auth.supabase, auth.user.id, "panel");
+    const credential = companyId
+      ? await resolveCompanyAiCredential(companyId, "panel")
+      : await resolveAiCredential(auth.supabase, auth.user.id, "panel");
     const result = await callOpenRouter({
       apiKey: credential.apiKey,
       modelId: credential.modelId,
@@ -141,12 +160,20 @@ export async function POST(request: Request) {
     let creditBalanceUsd: number | null = null;
     let chargedMicroUsd: number | null = null;
     if (credential.mode === "credits") {
-      const debit = await deductCredits({
-        userId: auth.user.id,
-        costUsd: result.costUsd,
-        feature: "panel",
-        modelId: credential.modelId,
-      });
+      const debit = companyId
+        ? await deductCompanyCredits({
+            creedId: companyId,
+            spentBy: auth.user.id,
+            costUsd: result.costUsd,
+            feature: "panel",
+            modelId: credential.modelId,
+          })
+        : await deductCredits({
+            userId: auth.user.id,
+            costUsd: result.costUsd,
+            feature: "panel",
+            modelId: credential.modelId,
+          });
       if (debit) {
         creditBalanceUsd = debit.balanceUsd;
         chargedMicroUsd = debit.chargedMicroUsd;
@@ -158,6 +185,7 @@ export async function POST(request: Request) {
         await recordAiUsage({
           client: auth.supabase,
           userId: auth.user.id,
+          creedId: companyId,
           feature: "panel",
           modelId: credential.modelId,
           modelQuality: result.modelQuality,

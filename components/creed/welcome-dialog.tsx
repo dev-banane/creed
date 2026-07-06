@@ -1,25 +1,27 @@
 "use client";
 
 // One-time welcome pop-up. Shown the first time a paid + onboarded user lands
-// in the app (see app/(creed-app)/layout.tsx, which computes `show`). Six
-// slides: what to do now, the features, what's coming, and a funnel into the
-// Discord. "Skip" on the first slide jumps to the last slide, it is not a
-// dismissal.
+// in the app (see app/(creed-app)/layout.tsx, which computes `show`). Slides:
+// what to do now, the features, what's coming, and a funnel into the Discord.
+// "Skip" on the first slide jumps to the last slide, it is not a dismissal.
+//
+// Two variants:
+//   personal - blue accent, 6 slides, videos from /assets/popups/personal.
+//   company  - amber accent (matching the Company wordmark), same slides plus a
+//              "members" slide in second position, videos from
+//              /assets/popups/company.
+// The accent is a single CSS var (--tour-accent) set per variant on the dialog,
+// so every accented element (button, dots, links, media chip) follows it.
 //
 // Closing (X, Esc, overlay click, or the final Done button) marks the tour
 // seen; clicking an inline link (roadmap, Discord) marks it seen too. Seen is
-// persisted two ways: a POST to /api/welcome/seen (server truth, so it doesn't
-// re-show on another device) and a localStorage mirror keyed to paid_at
-// (anti-flash + covers a lost POST on this device). Keying on paid_at means a
-// cancel -> re-buy naturally re-triggers the tour, since paid_at moves forward.
+// persisted two ways: a POST to /api/welcome/seen (server truth) and a
+// localStorage mirror keyed to paid_at (anti-flash + covers a lost POST).
 //
 // Dev preview: press P (outside any text field) in development to open the tour
-// on demand. It's mounted at the root via WelcomeDevPreview so P works on any
-// page. A dev-preview open never marks the tour seen.
-//
-// Videos: each slide points at /assets/popups/personal/<key>.mp4 (+ .webm),
-// warmed ahead of time (see WelcomeVideoPreloader). If a clip is missing the
-// media frame shows a deliberate placeholder, so adding one is a drop-in swap.
+// on demand. It reads the active space's variant (set by the app shell) so P
+// shows the company tour inside a company space and the personal tour elsewhere.
+// A dev-preview open never marks the tour seen.
 
 import {
   useCallback,
@@ -40,6 +42,7 @@ import {
   Gauge,
   Plug,
   TextCursorInput,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -49,20 +52,20 @@ import { ConnectIcon } from "@/components/ui/connect";
 import { FileTextIcon } from "@/components/ui/file-text";
 import { GaugeIcon } from "@/components/ui/gauge";
 import { TextCursorInputIcon } from "@/components/ui/text-cursor-input";
+import { UsersIcon } from "@/components/ui/users";
 import { DISCORD_URL } from "@/lib/branding";
 import { fireWelcomeConfetti } from "@/lib/confetti";
+import { getWelcomePreviewVariant, type WelcomeVariant } from "@/lib/welcome-preview";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "creed:welcomed";
 const OPEN_DELAY_MS = 450;
-const MEDIA_BASE = "/assets/popups/personal";
 const IS_DEV = process.env.NODE_ENV !== "production";
 const DISCORD_BLURPLE = "#5865F2";
 
-// The app's inline-link style (see components/marketing/docs-page-view.tsx):
-// brand blue, no underline, darkens on hover.
+// Inline-link style: follows the tour's accent, no underline, darkens on hover.
 const LINK_CLASS =
-  "font-medium text-[var(--creed-accent)] transition-colors hover:text-[var(--creed-accent-hover)]";
+  "font-medium text-[var(--tour-accent)] transition-colors hover:text-[var(--tour-accent-hover)]";
 
 type Slide = {
   key: string;
@@ -74,7 +77,7 @@ type Slide = {
   hasVideo: boolean;
 };
 
-const SLIDES: Slide[] = [
+const PERSONAL_SLIDES: Slide[] = [
   {
     key: "file",
     icon: FileText,
@@ -141,7 +144,24 @@ const SLIDES: Slide[] = [
   },
 ];
 
-const LAST = SLIDES.length - 1;
+// The company-only slide, shown second (right after "Your Creed is live").
+const MEMBERS_SLIDE: Slide = {
+  key: "members",
+  icon: Users,
+  title: "Invite your team",
+  body: "Add members, set roles, and choose what each person can read, propose, or edit.",
+  hasVideo: true,
+};
+
+const COMPANY_SLIDES: Slide[] = [
+  PERSONAL_SLIDES[0],
+  MEMBERS_SLIDE,
+  ...PERSONAL_SLIDES.slice(1),
+];
+
+function slidesFor(variant: WelcomeVariant): Slide[] {
+  return variant === "company" ? COMPANY_SLIDES : PERSONAL_SLIDES;
+}
 
 function DiscordGlyph({ className }: { className?: string }) {
   return (
@@ -156,12 +176,12 @@ function DiscordGlyph({ className }: { className?: string }) {
   );
 }
 
-// Shared handle shape for the app's animated icon components (connect, file).
+// Shared handle shape for the app's animated icon components.
 type MorphHandle = { startAnimation: () => void; stopAnimation: () => void };
 
 // Plays one of the lucide-animated morphing icons once on mount, then settles
 // it back to rest.
-type MorphKind = "file" | "connect" | "gauge" | "command" | "tab";
+type MorphKind = "file" | "connect" | "gauge" | "command" | "tab" | "users";
 
 function MorphIcon({ kind }: { kind: MorphKind }) {
   const reduce = useReducedMotion();
@@ -186,18 +206,21 @@ function MorphIcon({ kind }: { kind: MorphKind }) {
       return <CommandIcon ref={ref} size={26} />;
     case "tab":
       return <TextCursorInputIcon ref={ref} size={26} />;
+    case "users":
+      return <UsersIcon ref={ref} size={26} />;
   }
 }
 
-// The icon to the left of each slide's title. Inherits the title colour (white
-// in dark mode, dark in light so it stays visible) and springs in when the
-// slide appears; file + connect additionally play their morph animation.
+// The icon to the left of each slide's title. Inherits the title colour and
+// springs in when the slide appears; the morphing icons also play once.
 function SlideTitleIcon({ slide }: { slide: Slide }) {
   const reduce = useReducedMotion();
 
   let inner: ReactNode;
   if (slide.key === "file") {
     inner = <MorphIcon kind="file" />;
+  } else if (slide.key === "members") {
+    inner = <MorphIcon kind="users" />;
   } else if (slide.key === "connect") {
     inner = <MorphIcon kind="connect" />;
   } else if (slide.key === "analysis") {
@@ -234,16 +257,18 @@ function SlideTitleIcon({ slide }: { slide: Slide }) {
 
 function MediaFrame({
   slide,
+  mediaBase,
   lineVariants,
 }: {
   slide: Slide;
+  mediaBase: string;
   lineVariants: Variants;
 }) {
   const [ready, setReady] = useState(false);
   const reduce = useReducedMotion();
   const Icon = slide.icon;
   const isDiscord = slide.key === "discord";
-  const base = `${MEDIA_BASE}/${slide.key}`;
+  const base = `${mediaBase}/${slide.key}`;
   // The redline annotation only makes sense where a video is expected, and only
   // in dev - real users never see file paths.
   const showRedline = IS_DEV && slide.hasVideo;
@@ -266,7 +291,7 @@ function MediaFrame({
           <div
             className="grid h-14 w-14 place-items-center rounded-[var(--radius-md)] bg-[var(--creed-surface)] ring-1 ring-[var(--creed-border)] transition-colors duration-[400ms] dark:ring-[var(--creed-border-strong)]"
             style={{
-              color: isDiscord ? DISCORD_BLURPLE : "var(--creed-accent)",
+              color: isDiscord ? DISCORD_BLURPLE : "var(--tour-accent)",
             }}
           >
             {isDiscord ? (
@@ -284,13 +309,14 @@ function MediaFrame({
               16:9 · placeholder
             </div>
             <div className="text-[var(--creed-text-secondary)]">
-              /public/assets/popups/personal/{slide.key}.mp4
+              /public{mediaBase}/{slide.key}.mp4
             </div>
           </div>
         ) : null}
 
         {slide.hasVideo ? (
           <video
+            key={base}
             className={cn(
               "absolute inset-0 h-full w-full object-cover transition-opacity duration-300",
               ready ? "opacity-100" : "opacity-0",
@@ -315,6 +341,8 @@ function MediaFrame({
 type WelcomeDialogProps = {
   show: boolean;
   paidAt: string | null;
+  // The active space's variant, driving colour + slides + media folder.
+  variant?: WelcomeVariant;
   // When true (dev preview mount only), this instance listens for the P
   // shortcut. The in-app instance leaves it off so there's never a double
   // listener when both are mounted in development.
@@ -324,11 +352,15 @@ type WelcomeDialogProps = {
 export function WelcomeDialog({
   show,
   paidAt,
+  variant: variantProp = "personal",
   previewHotkey = false,
 }: WelcomeDialogProps) {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
+  // The live variant: the prop for a real open, or the active space's variant
+  // (read from the store) when opened via the dev P shortcut.
+  const [variant, setVariant] = useState<WelcomeVariant>(variantProp);
   const reduce = useReducedMotion();
 
   const indexRef = useRef(0);
@@ -339,42 +371,22 @@ export function WelcomeDialog({
     indexRef.current = index;
   }, [index]);
 
-  // Celebrate on appearance: a bright poof of confetti from both screen edges
-  // the moment the tour opens (they just paid + finished onboarding).
-  //
-  // The dialog's full-screen backdrop blur is what still makes the burst stutter
-  // (the color picker fires with no blur and is perfectly smooth): compositing a
-  // full-viewport animating canvas over a backdrop-filter forces it to re-run
-  // per frame even with the canvas on its own GPU layer. blur-xs is only 2px, so
-  // we drop it just for the ~1.4s the burst is on screen - imperceptible - and
-  // restore it after, which removes the last of the lag.
+  // Keep a real (non-preview) instance in step with the space it's mounted for.
+  useEffect(() => {
+    if (!devPreviewRef.current) setVariant(variantProp);
+  }, [variantProp]);
+
+  const slides = slidesFor(variant);
+  const mediaBase = `/assets/popups/${variant}`;
+  const last = slides.length - 1;
+
+  // Celebrate on appearance: a bright poof of confetti the moment the tour
+  // opens. The overlay's backdrop blur is left alone so it fades in with the
+  // pop-up (like every other dialog) instead of popping in a beat later.
   useEffect(() => {
     if (!open) return;
     fireWelcomeConfetti();
-    if (reduce) return; // no confetti under reduced motion -> nothing to relax
-
-    // Drop the overlay's backdrop blur for the burst. Query on the next frame
-    // so Radix's portal has mounted, and use !important so it beats the
-    // Tailwind backdrop-blur utility; removeProperty restores it after.
-    let overlay: HTMLElement | null = null;
-    const raf = requestAnimationFrame(() => {
-      overlay = document.querySelector<HTMLElement>(
-        '[data-slot="dialog-overlay"]'
-      );
-      overlay?.style.setProperty("backdrop-filter", "none", "important");
-      overlay?.style.setProperty("-webkit-backdrop-filter", "none", "important");
-    });
-    const clearBlurOverride = () => {
-      overlay?.style.removeProperty("backdrop-filter");
-      overlay?.style.removeProperty("-webkit-backdrop-filter");
-    };
-    const restore = window.setTimeout(clearBlurOverride, 1500);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.clearTimeout(restore);
-      clearBlurOverride();
-    };
-  }, [open, reduce]);
+  }, [open]);
 
   // Real first-run open: only when the server says to and this device hasn't
   // already dismissed it for the current paid_at.
@@ -408,6 +420,7 @@ export function WelcomeDialog({
       e.preventDefault();
       devPreviewRef.current = true;
       seenRef.current = false;
+      setVariant(getWelcomePreviewVariant());
       setIndex(0);
       setDir(1);
       setOpen(true);
@@ -442,15 +455,18 @@ export function WelcomeDialog({
     [markSeen],
   );
 
-  const goTo = useCallback((target: number) => {
-    const clamped = Math.max(0, Math.min(LAST, target));
-    setDir(clamped >= indexRef.current ? 1 : -1);
-    setIndex(clamped);
-  }, []);
+  const goTo = useCallback(
+    (target: number) => {
+      const clamped = Math.max(0, Math.min(last, target));
+      setDir(clamped >= indexRef.current ? 1 : -1);
+      setIndex(clamped);
+    },
+    [last],
+  );
 
-  const slide = SLIDES[index];
+  const slide = slides[Math.min(index, last)];
   const isFirst = index === 0;
-  const isLast = index === LAST;
+  const isLast = index === last;
   const offset = reduce ? 0 : 24;
 
   const slideVariants: Variants = {
@@ -484,7 +500,15 @@ export function WelcomeDialog({
   };
 
   const primaryBtn =
-    "rounded-md bg-[var(--creed-accent)] text-white hover:bg-[var(--creed-accent-hover)]";
+    "rounded-md bg-[var(--tour-accent)] text-white hover:bg-[var(--tour-accent-hover)]";
+
+  // The tour's accent as a CSS var, set per variant so every accented element
+  // (button, dots, links, media chip) follows it. Company is amber, matching the
+  // "Company" wordmark; personal falls back to the app's blue accent.
+  const accentVars =
+    variant === "company"
+      ? "[--tour-accent:#F59E0B] [--tour-accent-hover:#D97706] dark:[--tour-accent:#F5A623] dark:[--tour-accent-hover:#E0951E]"
+      : "[--tour-accent:var(--creed-accent)] [--tour-accent-hover:var(--creed-accent-hover)]";
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -495,6 +519,7 @@ export function WelcomeDialog({
           "w-[calc(100vw-1.5rem)] max-w-[700px] sm:w-[calc(100vw-2rem)]",
           "max-h-[calc(100dvh-2rem)]",
           "bg-[var(--creed-surface)]",
+          accentVars,
         )}
         onKeyDown={(e) => {
           if (e.key === "ArrowRight" || (e.key === "Enter" && !isLast)) {
@@ -543,7 +568,7 @@ export function WelcomeDialog({
                 {slide.body}
               </motion.p>
 
-              <MediaFrame slide={slide} lineVariants={lineVariants} />
+              <MediaFrame slide={slide} mediaBase={mediaBase} lineVariants={lineVariants} />
             </motion.div>
           </AnimatePresence>
         </div>
@@ -555,13 +580,13 @@ export function WelcomeDialog({
             <Button
               variant="ghost"
               className="rounded-md"
-              onClick={() => goTo(isFirst ? LAST : indexRef.current - 1)}
+              onClick={() => goTo(isFirst ? last : indexRef.current - 1)}
             >
               {isFirst ? "Skip" : "Back"}
             </Button>
           </div>
 
-          <Dots index={index} onJump={goTo} />
+          <Dots index={index} slides={slides} onJump={goTo} />
 
           <div className="justify-self-end">
             {isLast ? (
@@ -588,33 +613,35 @@ export function WelcomeDialog({
 
 function Dots({
   index,
+  slides,
   onJump,
 }: {
   index: number;
+  slides: Slide[];
   onJump: (i: number) => void;
 }) {
   return (
     <div
       role="group"
-      aria-label={`Progress: step ${index + 1} of ${SLIDES.length}`}
+      aria-label={`Progress: step ${index + 1} of ${slides.length}`}
       className="flex items-center justify-self-center gap-1.5"
     >
-      {SLIDES.map((s, i) => {
+      {slides.map((s, i) => {
         const current = i === index;
         const done = i < index;
         return (
           <button
             key={s.key}
             type="button"
-            aria-label={`Go to step ${i + 1} of ${SLIDES.length}`}
+            aria-label={`Go to step ${i + 1} of ${slides.length}`}
             aria-current={current ? "step" : undefined}
             onClick={() => onJump(i)}
             className={cn(
-              "h-[5px] rounded-[3px] outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-[var(--creed-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--creed-surface)]",
+              "h-[5px] rounded-[3px] outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-[var(--tour-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--creed-surface)]",
               current
-                ? "w-5 bg-[var(--creed-accent)]"
+                ? "w-5 bg-[var(--tour-accent)]"
                 : done
-                  ? "w-2.5 bg-[var(--creed-accent)]/45"
+                  ? "w-2.5 bg-[var(--tour-accent)]/45"
                   : "w-2.5 bg-[var(--creed-border-strong)]",
             )}
           />

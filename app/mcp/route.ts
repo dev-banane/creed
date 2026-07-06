@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import type { AccentKey, CreedSection, CreedState, GovernedSectionId } from "@/lib/creed-data";
+import type { User } from "@supabase/supabase-js";
+import type { AccentKey, AgentPermission, CreedSection, CreedState, GovernedSectionId } from "@/lib/creed-data";
 import {
   buildAgentReadPayload,
   buildVisibleCreedMarkdown,
@@ -7,10 +8,16 @@ import {
 } from "@/lib/creed-data";
 import {
   loadCreedState,
+  loadCompanyCreedState,
   recordMcpClientUsage,
+  createBlankCreedState,
 } from "@/lib/creed-backend";
+import { companyMcpWrite, type CompanyMcpOp } from "@/lib/company-sections";
+import { minPermission, resolveSectionPermission } from "@/lib/creed-permissions";
+import { listUserCreeds, getCreedRole } from "@/lib/creed-membership";
 import { CREED_PROMPTS } from "@/lib/creed-prompts";
 import { findOAuthAccessToken } from "@/lib/oauth";
+import type { SupabaseLikeClient } from "@/lib/supabase/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSiteUrl, isSupabaseAdminConfigured } from "@/lib/supabase/env";
@@ -80,12 +87,22 @@ const MCP_ACCENT_KEYS = [
 
 const tools = [
   {
+    name: "list_creeds",
+    description:
+      "List the Creed this connection can access. A connection is scoped to a single Creed (the user's personal Creed, or one company Creed) chosen when the agent was connected; every other tool acts on that Creed.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "read_creed",
-    description: "Read the user's Creed, including the private operating contract for connected agents.",
+    description: "Read the connected Creed, including the private operating contract for connected agents.",
     inputSchema: {
       type: "object",
       properties: {
         agentName: { type: "string" },
+        creed: { type: "string", description: "Optional Creed id or name (see list_creeds). A connection is scoped to one Creed, so this is rarely needed." },
       },
     },
   },
@@ -607,16 +624,159 @@ async function callInternalCreedRoute(
   return payload;
 }
 
+// Resolve which Creed a request batch targets and load its state. Personal
+// Creeds go through the untouched loadCreedState; company Creeds (only ones the
+// user is a member of AND the token was granted) load with each section's agent
+// permission clamped to the member's effective ceiling. The target is taken from
+// the first tool call's `creed` arg (id or name, case-insensitive); absent, it
+// defaults to the personal Creed. Returns the state + the switcher list (for
+// list_creeds).
+async function resolveMcpState(
+  admin: SupabaseLikeClient,
+  user: { id: string } & Record<string, unknown>,
+  tokenId: string,
+  requests: JsonRpcRequest[]
+): Promise<{ state: CreedState; creeds: Awaited<ReturnType<typeof listUserCreeds>> }> {
+  const allCreeds = await listUserCreeds(admin, user.id);
+  const personal = allCreeds.find((c) => c.type === "personal");
+
+  // Per-token Creed grants (chosen on the consent screen). A token is confined
+  // to the Creeds it was granted: this is what keeps an agent connected for one
+  // space out of the others. A token with NO grant rows is a legacy connection
+  // from before per-Creed grants existed; it falls back to personal-only, never
+  // "everything", so a missing grant can never widen access.
+  //
+  // Only creed_id is read: with single-select connections a token holds one
+  // Creed, and the real edit ceiling is enforced per section (owner/admin member
+  // permission clamped by the member's own agent permission), so the coarse
+  // per-grant `mode` column is not consulted.
+  const { data: grants } = (await admin
+    .from("oauth_token_creeds")
+    .select("creed_id")
+    .eq("token_id", tokenId)) as { data: Array<{ creed_id: string }> | null };
+  const grantedIds = new Set((grants ?? []).map((g) => g.creed_id));
+  let creeds = grantedIds.size > 0 ? allCreeds.filter((c) => grantedIds.has(c.id)) : [];
+  // If the grants point only at Creeds the user has since left (or there are no
+  // grants at all), fall back to the token owner's own personal Creed.
+  if (creeds.length === 0 && personal) creeds = [personal];
+
+  // The Creed named on the first tool call that carries a `creed` arg.
+  let requested: string | null = null;
+  for (const req of requests) {
+    if (req.method === "tools/call") {
+      const a = (req.params as McpToolCallParams | undefined)?.arguments ?? {};
+      const c = a.creed;
+      if (typeof c === "string" && c.trim()) {
+        requested = c.trim();
+        break;
+      }
+    }
+  }
+
+  let target = creeds.find((c) => c.type === "personal") ?? creeds[0];
+  if (requested) {
+    // Only Creeds this token was granted are addressable; a `creed` arg naming a
+    // non-granted Creed is ignored and the default (granted) target stands.
+    const match = creeds.find(
+      (c) => c.id === requested || c.name.toLowerCase() === requested!.toLowerCase()
+    );
+    if (match) target = match;
+  }
+
+  // An empty, write-less state (no section content, no write/direct tokens) for
+  // the cases where the token has no Creed it may currently load. Reads return
+  // nothing and every write tool fails auth (empty tokens), so it never exposes
+  // a Creed the token was not granted.
+  const emptyState = (): { state: CreedState; creeds: typeof creeds } => ({
+    state: { ...createBlankCreedState(user as never), creeds },
+    creeds,
+  });
+
+  if (target && target.type === "company") {
+    const role = await getCreedRole(admin, user.id, target.id);
+    if (role) {
+      const result = await loadCompanyCreedState(
+        user as never,
+        target.id,
+        role,
+        creeds
+      );
+      // The agent's reach on each section is the lower of two ceilings: what the
+      // owner/admin allow the member (creed_member_section_permissions, resolved
+      // to Direct for owner/admin) and what the member allows their own agent
+      // (already on section.agentPermission). Clamp here - the agent-permission
+      // table is stored unclamped - so tool listing, write policy, and the write
+      // path all see the true effective permission. Hidden sections drop out.
+      const overrides = new Map<string, AgentPermission>();
+      if (role === "member") {
+        const { data: overrideRows } = (await admin
+          .from("creed_member_section_permissions")
+          .select("section_id, permission")
+          .eq("creed_id", target.id)
+          .eq("user_id", user.id)) as {
+          data: Array<{ section_id: string; permission: AgentPermission }> | null;
+        };
+        for (const row of overrideRows ?? []) overrides.set(row.section_id, row.permission);
+      }
+      const state: CreedState = {
+        ...result.state,
+        sections: result.state.sections
+          .map((s) => {
+            const ceiling = resolveSectionPermission(role, overrides.get(s.id));
+            const effective = minPermission(ceiling, s.agentPermission);
+            return { ...s, agentPermission: effective, agentWritable: effective === "direct" };
+          })
+          .filter((s) => s.agentPermission !== "hidden"),
+      };
+      return { state, creeds };
+    }
+    // Company target but membership was revoked between listing the Creeds and
+    // this role check (a remove-member request interleaving with this MCP
+    // batch). Do NOT fall through to the personal loader: this token was granted
+    // only the company Creed, so return an empty state rather than expose the
+    // owner's personal Creed.
+    return emptyState();
+  }
+
+  // Personal (default): only when the token actually holds a personal grant.
+  // Otherwise (e.g. a company-only token whose sole granted Creed just resolved
+  // away) return the empty state instead of leaking the owner's personal Creed.
+  const personalGranted = personal && creeds.some((c) => c.id === personal.id);
+  if (!personalGranted) {
+    return emptyState();
+  }
+
+  const { state } = await loadCreedState(admin as never, user as never, {
+    proposalLimit: 100,
+    activityLimit: 100,
+  });
+  return { state: { ...state, creeds, creedType: "personal", creedId: personal?.id }, creeds };
+}
+
 async function handleToolCall(
   request: Request,
   rpcRequest: JsonRpcRequest,
   state: CreedState,
-  userId: string,
+  user: User,
   fallbackAgentName: string | null
 ) {
+  const userId = user.id;
   const params = (rpcRequest.params ?? {}) as McpToolCallParams;
   const name = params.name;
   const args = params.arguments ?? {};
+
+  if (name === "list_creeds") {
+    return jsonToolResult(
+      (state.creeds ?? []).map((c) => ({
+        id: c.id,
+        name: c.type === "personal" ? "Personal" : c.name,
+        type: c.type,
+        role: c.role,
+        access: "read-write",
+      }))
+    );
+  }
+
   // Per-section tools don't force the agent to pass `agentName`, and tool-call
   // requests carry no clientInfo, so getClientName can be null. Fall back to the
   // resolved connection name (then a generic label) so every proposal/write body
@@ -653,6 +813,12 @@ async function handleToolCall(
   }
 
   if (name === "propose_creed_update") {
+    // On a company Creed there are no personal write tokens; map the draft to a
+    // company op and let companyMcpWrite enforce + route it (the server picks
+    // direct vs proposal from the section's effective permission).
+    if (state.creedType === "company") {
+      return runCompanyWrite(state, user, agentName, companyOpFromDraft(state, args));
+    }
     const proposalBody = {
       id: typeof args.id === "string" ? args.id : `mcp-proposal-${Date.now()}`,
       sectionId: stringArg(args, "sectionId"),
@@ -671,6 +837,9 @@ async function handleToolCall(
   }
 
   if (name === "direct_edit_creed") {
+    if (state.creedType === "company") {
+      return runCompanyWrite(state, user, agentName, companyOpFromOperation(state, args));
+    }
     // Per-section now: the write route 403s any non-direct target. Give an
     // early, clearer error only when no section allows direct edits at all.
     if (!state.sections.some((section) => section.agentPermission === "direct")) {
@@ -702,7 +871,8 @@ async function handleToolCall(
       "update",
       section,
       { contentMarkdown, reason },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -740,7 +910,8 @@ async function handleToolCall(
         insertAfterSectionId: insertAfterSectionId || undefined,
         reason,
       },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -754,7 +925,8 @@ async function handleToolCall(
       "delete",
       section,
       { reason },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -772,7 +944,8 @@ async function handleToolCall(
       "rename",
       section,
       { name: newName.trim(), reason },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -792,7 +965,8 @@ async function handleToolCall(
       "recolor",
       section,
       { accent, reason },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -907,7 +1081,7 @@ async function handleToolCall(
       throw new Error("creed_append_to_section requires non-empty `contentMarkdown`.");
     }
     const section = resolveSectionOrThrow(state, sectionId);
-    return await runAppend(request, state, section, { contentMarkdown, reason }, agentName);
+    return await runAppend(request, state, section, { contentMarkdown, reason }, agentName, user);
   }
 
   if (name === "creed_reorder_section") {
@@ -944,7 +1118,8 @@ async function handleToolCall(
       state,
       section,
       { afterSectionId: resolvedAnchorId, position, reason },
-      agentName
+      agentName,
+      user
     );
   }
 
@@ -1004,6 +1179,110 @@ function sectionUseDirectEdit(section: CreedSection): boolean {
   return section.agentPermission === "direct";
 }
 
+// Company writes don't use the personal write tokens (company state carries
+// none). They route through companyMcpWrite, which re-derives the member's
+// effective agent permission per section, applies directly or files a proposal,
+// and attributes the change to "[member]'s [agent]". This helper adapts its
+// result into the same { ok, mode, ... } tool payload the personal runners
+// return, so an agent sees identical behaviour on either kind of Creed.
+async function runCompanyWrite(
+  state: CreedState,
+  user: User,
+  agentName: string,
+  op: CompanyMcpOp
+) {
+  if (!state.creedId) {
+    throw new Error("This company Creed can't be addressed right now.");
+  }
+  const result = await companyMcpWrite({ creedId: state.creedId, user, agentName, op });
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+  return jsonToolResult({
+    ok: true,
+    mode: result.filedProposal ? "proposed" : "direct",
+    operation: op.kind === "create" ? "create_section" : `${op.kind}_section`,
+    sectionId: "sectionId" in op ? op.sectionId : undefined,
+    sectionName: op.kind === "create" ? op.name : undefined,
+  });
+}
+
+// Pull section body out of a draft/section object, converting markdown if that's
+// what the caller sent (the flat tools convert at the call site; the legacy
+// tools accept either form).
+function draftContentHtml(source: Record<string, unknown>): string {
+  if (typeof source.contentHtml === "string") return source.contentHtml;
+  if (typeof source.contentMarkdown === "string") return markdownToRichHtml(source.contentMarkdown);
+  return "";
+}
+
+// Map the legacy propose_creed_update draft onto a company op. The company path
+// then enforces the section's effective permission and picks direct vs proposal.
+function companyOpFromDraft(state: CreedState, args: Record<string, unknown>): CompanyMcpOp {
+  const draft = (args.draft ?? {}) as Record<string, unknown>;
+  const kind = typeof draft.kind === "string" ? draft.kind : "rich-text";
+  if (kind === "new-section") {
+    return {
+      kind: "create",
+      name: (typeof draft.name === "string" ? draft.name : stringArg(args, "sectionName")).trim(),
+      contentHtml: draftContentHtml(draft),
+      accent: isAccentKey(draft.accent) ? draft.accent : undefined,
+      insertAfterSectionId:
+        typeof draft.insertAfterSectionId === "string" ? draft.insertAfterSectionId : undefined,
+    };
+  }
+  const section = resolveSectionOrThrow(state, stringArg(args, "sectionId"));
+  if (kind === "delete-section") return { kind: "delete", sectionId: section.id };
+  if (kind === "rename-section")
+    return { kind: "rename", sectionId: section.id, name: typeof draft.name === "string" ? draft.name.trim() : "" };
+  if (kind === "recolor-section")
+    return { kind: "recolor", sectionId: section.id, accent: isAccentKey(draft.accent) ? draft.accent : "custom" };
+  if (kind === "reorder-section")
+    return {
+      kind: "reorder",
+      sectionId: section.id,
+      afterSectionId: typeof draft.afterSectionId === "string" ? draft.afterSectionId : undefined,
+      position: draft.position === "first" || draft.position === "last" ? draft.position : undefined,
+    };
+  return { kind: "update", sectionId: section.id, contentHtml: draftContentHtml(draft) };
+}
+
+// Map the legacy direct_edit_creed operation onto a company op.
+function companyOpFromOperation(state: CreedState, args: Record<string, unknown>): CompanyMcpOp {
+  const operation = typeof args.operation === "string" ? args.operation : "update_section";
+  const section = (args.section ?? {}) as Record<string, unknown>;
+  if (operation === "create_section") {
+    return {
+      kind: "create",
+      name: (typeof section.name === "string" ? section.name : "").trim(),
+      contentHtml: draftContentHtml(section),
+      accent: isAccentKey(section.accent) ? section.accent : undefined,
+      insertAfterSectionId:
+        typeof section.insertAfterSectionId === "string" ? section.insertAfterSectionId : undefined,
+    };
+  }
+  const target = resolveSectionOrThrow(state, stringArg(args, "sectionId"));
+  switch (operation) {
+    case "delete_section":
+      return { kind: "delete", sectionId: target.id };
+    case "rename_section":
+      return { kind: "rename", sectionId: target.id, name: stringArg(args, "name") };
+    case "recolor_section":
+      return { kind: "recolor", sectionId: target.id, accent: isAccentKey(args.accent) ? args.accent : "custom" };
+    case "reorder_section":
+      return {
+        kind: "reorder",
+        sectionId: target.id,
+        afterSectionId: stringArg(args, "afterSectionId") || undefined,
+        position: args.position === "first" || args.position === "last" ? args.position : undefined,
+      };
+    case "append_to_section":
+      return { kind: "append", sectionId: target.id, contentHtml: draftContentHtml(args) };
+    default:
+      return { kind: "update", sectionId: target.id, contentHtml: draftContentHtml(section) };
+  }
+}
+
 type MutationKind = "update" | "delete" | "rename" | "recolor";
 
 async function runSectionMutation(
@@ -1017,8 +1296,21 @@ async function runSectionMutation(
     accent?: AccentKey;
     reason?: string;
   },
-  agentName: string | null
+  agentName: string | null,
+  user: User
 ) {
+  if (state.creedType === "company") {
+    const op: CompanyMcpOp =
+      kind === "update"
+        ? { kind: "update", sectionId: section.id, contentHtml: markdownToRichHtml(payload.contentMarkdown ?? "") }
+        : kind === "delete"
+          ? { kind: "delete", sectionId: section.id }
+          : kind === "rename"
+            ? { kind: "rename", sectionId: section.id, name: payload.name ?? "" }
+            : { kind: "recolor", sectionId: section.id, accent: payload.accent ?? "custom" };
+    return runCompanyWrite(state, user, agentName ?? "Connected agent", op);
+  }
+
   const useDirectEdit = sectionUseDirectEdit(section);
 
   if (useDirectEdit) {
@@ -1103,8 +1395,19 @@ async function runCreate(
     insertAfterSectionId?: string;
     reason?: string;
   },
-  agentName: string | null
+  agentName: string | null,
+  user: User
 ) {
+  if (state.creedType === "company") {
+    return runCompanyWrite(state, user, agentName ?? "Connected agent", {
+      kind: "create",
+      name: payload.name,
+      contentHtml: markdownToRichHtml(payload.contentMarkdown),
+      accent: payload.accent,
+      insertAfterSectionId: payload.insertAfterSectionId,
+    });
+  }
+
   const useDirectEdit = !state.settings.requireApproval;
 
   if (useDirectEdit) {
@@ -1181,8 +1484,17 @@ async function runAppend(
   state: CreedState,
   section: CreedSection,
   payload: { contentMarkdown: string; reason?: string },
-  agentName: string | null
+  agentName: string | null,
+  user: User
 ) {
+  if (state.creedType === "company") {
+    return runCompanyWrite(state, user, agentName ?? "Connected agent", {
+      kind: "append",
+      sectionId: section.id,
+      contentHtml: markdownToRichHtml(payload.contentMarkdown),
+    });
+  }
+
   if (sectionUseDirectEdit(section)) {
     await callInternalCreedRoute(request, "/api/creed/write", state.directEditToken, {
       operation: "append_to_section",
@@ -1237,8 +1549,18 @@ async function runReorder(
     position?: "first" | "last";
     reason?: string;
   },
-  agentName: string | null
+  agentName: string | null,
+  user: User
 ) {
+  if (state.creedType === "company") {
+    return runCompanyWrite(state, user, agentName ?? "Connected agent", {
+      kind: "reorder",
+      sectionId: section.id,
+      afterSectionId: payload.afterSectionId,
+      position: payload.position,
+    });
+  }
+
   if (sectionUseDirectEdit(section)) {
     await callInternalCreedRoute(request, "/api/creed/write", state.directEditToken, {
       operation: "reorder_section",
@@ -1361,13 +1683,23 @@ async function loadLatestQualityReport(
   // resolved it once via findOAuthAccessToken - avoids a second indexed
   // lookup + token hashing pass on every quality-report read.
   const admin = getSupabaseAdminClient();
-  const row = await readLatestQualityReport(admin as never, userId);
+  // Company Creeds share one report keyed by creed_id; personal reports stay
+  // keyed by the owner's user_id.
+  const row = await readLatestQualityReport(
+    admin as never,
+    userId,
+    state.creedType === "company" ? state.creedId : undefined
+  );
   if (!row?.report) return null;
   try {
     return validateQualityReport(
       row.report,
       state.sections,
-      typeof row.content_hash === "string" ? row.content_hash : ""
+      typeof row.content_hash === "string" ? row.content_hash : "",
+      // Company Creeds share one report: return the stored shared overall score +
+      // full narrative (the same the owner sees), not a recompute over the
+      // connecting member's visible subset. No effect for personal.
+      state.creedType === "company",
     );
   } catch {
     // Stored report doesn't validate against the current sections (probably
@@ -1382,7 +1714,7 @@ async function handleRpcRequest(
   request: Request,
   rpcRequest: JsonRpcRequest,
   state: CreedState,
-  userId: string,
+  user: User,
   fallbackAgentName: string | null
 ) {
   if (!rpcRequest.method) {
@@ -1467,7 +1799,7 @@ async function handleRpcRequest(
 
   if (rpcRequest.method === "tools/call") {
     try {
-      const result = await handleToolCall(request, rpcRequest, state, userId, fallbackAgentName);
+      const result = await handleToolCall(request, rpcRequest, state, user, fallbackAgentName);
       return responseFor(rpcRequest.id, result);
     } catch (error) {
       return errorFor(
@@ -1565,15 +1897,16 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as JsonRpcRequest | JsonRpcRequest[];
-  // MCP only needs recent activity for the `creed_get_recent_activity`
-  // tool - 100 rows is plenty of "what other agents did lately". Proposals
-  // are only used for validation lookups (none of the per-tool handlers
-  // iterate the list), so a tight cap is safe.
-  const { state } = await loadCreedState(admin as never, userData.user, {
-    proposalLimit: 100,
-    activityLimit: 100,
-  });
   const requests = Array.isArray(body) ? body : [body];
+  // Resolve which Creed this batch targets (personal by default, or a company
+  // Creed named via the `creed` arg + granted to this token). Company Creeds
+  // load read-only. MCP only needs recent activity + a tight proposal cap.
+  const { state } = await resolveMcpState(
+    admin as unknown as SupabaseLikeClient,
+    userData.user as unknown as { id: string } & Record<string, unknown>,
+    resolved.tokenId,
+    requests
+  );
   const firstRequest = requests[0];
   const firstToolArgs =
     firstRequest?.method === "tools/call"
@@ -1582,10 +1915,10 @@ export async function POST(request: Request) {
 
   const clientName =
     getClientName(firstRequest ?? {}, firstToolArgs) ?? resolved.clientName;
-  await recordMcpClientUsage(admin as never, userId, clientName);
+  await recordMcpClientUsage(admin as never, userId, clientName, state.creedId);
 
   const results = (
-    await Promise.all(requests.map((rpcRequest) => handleRpcRequest(request, rpcRequest, state, userId, clientName)))
+    await Promise.all(requests.map((rpcRequest) => handleRpcRequest(request, rpcRequest, state, userData.user as User, clientName)))
   ).filter(Boolean);
 
   if (results.length === 0) {

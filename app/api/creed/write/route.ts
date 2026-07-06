@@ -24,7 +24,7 @@ import {
   recordConnectionUsage,
 } from "@/lib/creed-backend";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { markdownToRichHtml, normalizeRichTextInput } from "@/lib/rich-text";
+import { markdownToRichHtml, normalizeRichTextInput, richTextContentEquivalent } from "@/lib/rich-text";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/lib/supabase/env";
 
@@ -739,7 +739,7 @@ export async function POST(request: Request) {
     // agent we received the request and applied nothing, so it doesn't
     // assume the route is broken when its payload was just empty.
     if (
-      updatedSection.content === currentSection.content &&
+      richTextContentEquivalent(updatedSection.content, currentSection.content) &&
       updatedSection.name === currentSection.name &&
       updatedSection.accent === currentSection.accent
     ) {
@@ -800,7 +800,7 @@ export async function POST(request: Request) {
       );
     }
     if (
-      updatedSection.content === currentSection.content &&
+      richTextContentEquivalent(updatedSection.content, currentSection.content) &&
       updatedSection.name === currentSection.name &&
       updatedSection.accent === currentSection.accent
     ) {

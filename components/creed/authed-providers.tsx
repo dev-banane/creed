@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { BackendSetupScreen } from "@/components/auth/backend-setup-screen";
 import { CreedProvider } from "@/components/creed/creed-provider";
 import { initialCreedState } from "@/lib/creed-data";
-import { loadCreedState } from "@/lib/creed-backend";
+import { loadActiveCreedState } from "@/lib/creed-backend";
+import { resolveActiveCreed } from "@/lib/creed-context";
 import { isSupabaseTableMissingError } from "@/lib/creed-backend-errors";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -26,7 +27,8 @@ export async function AuthedProviders({ children }: { children: ReactNode }) {
 
     if (user) {
       try {
-        const result = await loadCreedState(supabase, user);
+        const active = await resolveActiveCreed(supabase, user);
+        const result = await loadActiveCreedState(supabase, user, active);
         initialState = result.state;
         persistenceEnabled = result.hasPersistedCreed;
       } catch (error) {

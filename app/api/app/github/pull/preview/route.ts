@@ -6,14 +6,22 @@ import {
   resolveSyncStatus,
   withAuthenticatedGitHubAccess,
 } from "@/lib/github-version-control";
+import { resolveManagedCompanyCreedId } from "@/lib/creed-context";
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { localHash?: string };
     const payload = await withAuthenticatedGitHubAccess(async ({
+      supabase,
+      user,
       integration,
       versionControl,
     }) => {
+      // Pulling GitHub into a shared company file (an import that overwrites
+      // sections) is not supported yet; company managers push out only.
+      if (await resolveManagedCompanyCreedId(supabase, user)) {
+        throw new Error("Pulling from GitHub into a company Creed isn't supported yet. You can push to GitHub.");
+      }
       const configuredRepo = getConfiguredRepo(versionControl);
 
       if (!configuredRepo) {

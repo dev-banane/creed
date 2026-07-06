@@ -26,8 +26,13 @@ import {
   type CreedState,
   type ProposalDraft,
 } from "@/lib/creed-data";
-import { normalizeRichTextInput } from "@/lib/rich-text";
+import { markdownToRichHtml, normalizeRichTextInput } from "@/lib/rich-text";
 import { loadCreedState, persistCreedState } from "@/lib/creed-backend";
+import {
+  companyMcpWrite,
+  setCompanySectionArchived,
+  type CompanyMcpOp,
+} from "@/lib/company-sections";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { log } from "@/lib/observability";
 import type { AgentAction, AgentExecResult } from "@/lib/panel/agent";
@@ -407,5 +412,111 @@ function labelFor(action: AgentAction, sections: CreedSection[]): string {
     case "set-permission":
       return `${name(action.sectionId)} → ${action.permission}`;
   }
+}
+
+// Company execution of the in-app "Creed" agent. Same behaviour as personal -
+// the model plans the same actions - but each one runs through companyMcpWrite,
+// which is the SINGLE company write path: it re-derives the acting member's
+// effective per-section permission (min of the owner/admin ceiling and the
+// member's own agent ceiling), applies a Direct edit or files a proposal
+// accordingly, versions + logs activity, and attributes it to the member as
+// "[member]'s Creed". Nothing about the write logic differs from personal; only
+// the persistence target (company tables) and the attribution do.
+function toHtml(content: string): string {
+  if (!content.trim()) return "";
+  return HTML_BLOCK.test(content) ? content : markdownToRichHtml(content);
+}
+
+function companyOpForAction(
+  action: AgentAction,
+  byId: (id: string) => CreedSection | undefined
+): CompanyMcpOp | null {
+  switch (action.kind) {
+    case "edit":
+      return { kind: "update", sectionId: action.sectionId, contentHtml: toHtml(action.content) };
+    case "new-section":
+      return {
+        kind: "create",
+        name: action.name,
+        contentHtml: toHtml(action.content),
+        accent: action.accent as string | undefined,
+      };
+    case "delete-section":
+      return { kind: "delete", sectionId: action.sectionId };
+    case "rename-section":
+      return { kind: "rename", sectionId: action.sectionId, name: action.name };
+    case "recolor-section":
+      return { kind: "recolor", sectionId: action.sectionId, accent: action.accent as string };
+    case "reorder-section":
+      return {
+        kind: "reorder",
+        sectionId: action.sectionId,
+        afterSectionId: action.afterSectionId,
+        position: action.position,
+      };
+    case "duplicate-section": {
+      const source = byId(action.sectionId);
+      if (!source) return null;
+      return {
+        kind: "create",
+        name: `${source.name} Copy`,
+        contentHtml: source.content,
+        accent: source.accent,
+        insertAfterSectionId: source.id,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+export async function executeCompanyAgentActions({
+  user,
+  creedId,
+  actions,
+  sections,
+}: {
+  user: User;
+  creedId: string;
+  actions: AgentAction[];
+  sections: CreedSection[];
+}): Promise<AgentExecution> {
+  const results: AgentExecResult[] = [];
+  const byId = (id: string) => sections.find((s) => s.id === id && !s.archived);
+
+  for (const action of actions) {
+    const label = labelFor(action, sections);
+
+    // Archive / restore are owner/admin lifecycle; route through the company
+    // admin path (it re-checks role and freeze). set-permission is not something
+    // the agent reassigns on a shared team file, so it is skipped for company.
+    if (action.kind === "archive-section" || action.kind === "restore-section") {
+      const res = await setCompanySectionArchived({
+        creedId,
+        user,
+        sectionId: action.sectionId,
+        archived: action.kind === "archive-section",
+      });
+      if (!res.ok) return { ok: false, reason: res.error, results };
+      results.push({ kind: "applied", sectionId: action.sectionId, label });
+      continue;
+    }
+    if (action.kind === "set-permission") continue;
+
+    const op = companyOpForAction(action, byId);
+    if (!op) continue;
+
+    const res = await companyMcpWrite({ creedId, user, agentName: CREED_AGENT_NAME, op });
+    if (!res.ok) return { ok: false, reason: res.error, results };
+
+    const sectionId = "sectionId" in op ? op.sectionId : "";
+    results.push(
+      res.filedProposal
+        ? { kind: "proposal", proposalId: res.proposalId ?? "", sectionId, label }
+        : { kind: "applied", sectionId, label }
+    );
+  }
+
+  return { ok: true, reason: "", results };
 }
 

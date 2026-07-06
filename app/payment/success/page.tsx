@@ -7,6 +7,7 @@ import {
   getStripeClient,
   upsertEntitlementFromSession,
 } from "@/lib/stripe";
+import { provisionCompanyFromSession } from "@/lib/company-billing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { log } from "@/lib/observability";
@@ -84,14 +85,19 @@ async function resolveState(sessionId: string | null): Promise<SuccessState> {
     return { kind: "wrong-user" };
   }
 
-  // Idempotent upsert so the user doesn't have to wait for the webhook. Track
-  // whether it actually landed: only a confirmed entitlement triggers the
-  // auto-advance. If it throws (DB hiccup), leave entitled=false so the page
-  // shows the manual Continue button rather than auto-bouncing the just-paid
-  // user to the paywall before the webhook catches up.
+  // Idempotent provisioning so the user doesn't have to wait for the webhook.
+  // A company session provisions the company Creed and routes to company
+  // onboarding; a personal session upserts the entitlement and routes to /file.
+  // Track whether it landed: only a confirmed result auto-advances. If it throws
+  // (DB hiccup), the webhook retries and the user can click Continue.
+  const isCompany = session.metadata?.plan === "company";
   let entitled = false;
   try {
-    await upsertEntitlementFromSession(session);
+    if (isCompany) {
+      await provisionCompanyFromSession(session);
+    } else {
+      await upsertEntitlementFromSession(session);
+    }
     entitled = true;
   } catch (error) {
     log.error(
@@ -99,12 +105,13 @@ async function resolveState(sessionId: string | null): Promise<SuccessState> {
       { sessionId, userId: supabaseUserId },
       error instanceof Error ? error : new Error(String(error))
     );
-    // Don't fail the page - the webhook will retry. The user can click
-    // Continue and the entitlement gate will let them through once the
-    // row exists.
   }
 
-  return { kind: "ok", continueHref: "/file", autoAdvance: entitled };
+  return {
+    kind: "ok",
+    continueHref: isCompany ? "/onboarding/company" : "/file",
+    autoAdvance: entitled,
+  };
 }
 
 export default async function PaymentSuccessPage({

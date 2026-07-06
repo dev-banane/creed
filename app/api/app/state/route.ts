@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { loadCreedState, persistCreedState } from "@/lib/creed-backend";
+import { loadActiveCreedState, persistCreedState } from "@/lib/creed-backend";
+import { resolveActiveCreed } from "@/lib/creed-context";
 import { requireApiAuth } from "@/lib/api-auth";
 import { validateCreedState } from "@/lib/validation/creed-state";
 
@@ -7,13 +8,29 @@ export async function GET() {
   const auth = await requireApiAuth();
   if (auth instanceof NextResponse) return auth;
 
-  const result = await loadCreedState(auth.supabase, auth.user);
+  const active = await resolveActiveCreed(auth.supabase, auth.user);
+  const result = await loadActiveCreedState(auth.supabase, auth.user, active);
   return NextResponse.json(result);
 }
 
 export async function PUT(request: Request) {
   const auth = await requireApiAuth();
   if (auth instanceof NextResponse) return auth;
+
+  // The full-state PUT is the personal autosave path (writes by user_id). In
+  // company mode the client must use the per-section API instead; reject here so
+  // a stray company-mode PUT can never write company sections onto the personal
+  // Creed.
+  const active = await resolveActiveCreed(auth.supabase, auth.user);
+  if (active) {
+    const activeEntry = active.creeds.find((c) => c.id === active.creedId);
+    if (activeEntry?.type === "company") {
+      return NextResponse.json(
+        { error: "Company Creeds save per section.", code: "companyMode" },
+        { status: 409 }
+      );
+    }
+  }
 
   let body: unknown;
   try {

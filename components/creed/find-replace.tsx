@@ -25,7 +25,28 @@ import { cn } from "@/lib/utils";
 
 const FIND_HIGHLIGHT = "creed-find";
 const ACTIVE_HIGHLIGHT = "creed-find-active";
+const HIGHLIGHT_STYLE_ID = "creed-find-highlight-styles";
 const SEARCH_DEBOUNCE_MS = 120;
+
+const HIGHLIGHT_STYLE_TEXT = `
+::highlight(creed-find) {
+  background-color: rgba(37, 99, 235, 0.16);
+}
+
+::highlight(creed-find-active) {
+  background-color: rgba(37, 99, 235, 0.42);
+  color: #ffffff;
+}
+
+.dark ::highlight(creed-find) {
+  background-color: rgba(96, 165, 250, 0.22);
+}
+
+.dark ::highlight(creed-find-active) {
+  background-color: rgba(96, 165, 250, 0.45);
+  color: #0e0e0d;
+}
+`.trim();
 
 type FindMatch = {
   sectionId: string;
@@ -37,6 +58,16 @@ type FindMatch = {
 
 const supportsHighlights = () =>
   typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
+
+function ensureHighlightStyles() {
+  if (typeof document === "undefined" || document.getElementById(HIGHLIGHT_STYLE_ID)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = HIGHLIGHT_STYLE_ID;
+  style.textContent = HIGHLIGHT_STYLE_TEXT;
+  document.head.appendChild(style);
+}
 
 // Walk a root's text nodes in document order, reporting every case-insensitive
 // match as (node, start). Shared shape between the rendered DOM (find) and the
@@ -189,6 +220,12 @@ export function CreedFindReplace({
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timeout);
   }, [open, query, scrollRef, state.sections]);
+
+  useEffect(() => {
+    if (supportsHighlights()) {
+      ensureHighlightStyles();
+    }
+  }, []);
 
   useEffect(() => {
     setActiveIndex(0);

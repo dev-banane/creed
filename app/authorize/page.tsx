@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
+import { AuthorizeSpacePicker, type SpaceOption } from "@/components/creed/authorize-space-picker";
 import { Button } from "@/components/ui/button";
 import { getAgentIconKind } from "@/lib/agent-icon";
 import { getOAuthClient, isAllowedRedirectUri } from "@/lib/oauth";
+import { getUserName } from "@/lib/creed-backend";
+import { listUserCreeds } from "@/lib/creed-membership";
 import { hasActiveEntitlement } from "@/lib/stripe";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -173,6 +176,23 @@ export default async function AuthorizePage({
     );
   }
 
+  // The spaces the user can grant this agent. A solo user (personal Creed only)
+  // sees no picker - the decision route grants their one space by default, which
+  // keeps the connect flow a single click. A user in one or more company Creeds
+  // gets the picker so they can scope the agent to personal or one company (a
+  // connection reaches exactly one Creed).
+  const creeds = await listUserCreeds(supabase, user.id);
+  // Show each space by its real name - the person's name for their personal
+  // Creed (mirroring the app switcher), the company name for a company Creed -
+  // never a generic "Personal"/"Company" label, since the owner knows which is
+  // which.
+  const spaces: SpaceOption[] = creeds.map((creed) => ({
+    id: creed.id,
+    label: creed.type === "personal" ? getUserName(user) : creed.name,
+    type: creed.type,
+  }));
+  const showPicker = spaces.length > 1;
+
   return (
     <Shell>
       <div className="flex items-center justify-center gap-4">
@@ -192,29 +212,32 @@ export default async function AuthorizePage({
         Signed in as {user.email}
       </p>
 
-      <form method="post" action="/authorize/decision" className="mt-7 flex items-center gap-3">
+      <form method="post" action="/authorize/decision" className="mt-5">
         <input type="hidden" name="client_id" value={clientId} />
         <input type="hidden" name="redirect_uri" value={redirectUri} />
         <input type="hidden" name="code_challenge" value={codeChallenge} />
         {params.state ? <input type="hidden" name="state" value={params.state} /> : null}
         {params.scope ? <input type="hidden" name="scope" value={params.scope} /> : null}
-        <Button
-          type="submit"
-          name="decision"
-          value="deny"
-          variant="secondary"
-          className="h-9 flex-1 rounded-md"
-        >
-          Deny
-        </Button>
-        <Button
-          type="submit"
-          name="decision"
-          value="allow"
-          className="h-9 flex-1 rounded-md bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
-        >
-          Allow
-        </Button>
+        {showPicker ? <AuthorizeSpacePicker spaces={spaces} /> : null}
+        <div className="mt-6 flex items-center gap-3">
+          <Button
+            type="submit"
+            name="decision"
+            value="deny"
+            variant="secondary"
+            className="h-9 flex-1 rounded-md"
+          >
+            Deny
+          </Button>
+          <Button
+            type="submit"
+            name="decision"
+            value="allow"
+            className="h-9 flex-1 rounded-md bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+          >
+            Allow
+          </Button>
+        </div>
       </form>
     </Shell>
   );

@@ -3,9 +3,13 @@ import { BackendSetupScreen } from "@/components/auth/backend-setup-screen";
 import { hasPersistedCreed } from "@/lib/creed-backend";
 import { isSupabaseTableMissingError } from "@/lib/creed-backend-errors";
 import { hasActiveEntitlement } from "@/lib/stripe";
+import { hasCompanyAccess } from "@/lib/creed-membership";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { log } from "@/lib/observability";
+
+export const dynamic = "force-dynamic";
 
 // Root-page router. Branches on three signals: Supabase configured?
 // (otherwise marketing-only), signed in?, paid?. Only then do we ask
@@ -41,14 +45,27 @@ export default async function Home() {
     redirect("/home");
   }
 
-  // Entitlement gate: the app is the paid product, so signed-in users
-  // without a paid row are sent to /onboarding (free: connect an agent,
-  // compose, preview, then "Get Creed") rather than into the app. The
-  // (creed-app) layout also gates /file etc, but short-circuiting here
-  // avoids the redundant section-probe round-trip for unpaid users.
-  const paid = await hasActiveEntitlement(supabase, user.id);
-  if (!paid) {
+  // Access gate. The app is the paid product, so a signed-in user with no
+  // access is sent to /onboarding (free: connect an agent, compose, preview,
+  // then "Get Creed"). Access is either a personal entitlement OR membership of
+  // a company Creed whose billing is live - a company member never needs a
+  // personal plan.
+  const admin = getSupabaseAdminClient();
+  const [paid, companyAccess] = await Promise.all([
+    hasActiveEntitlement(supabase, user.id),
+    hasCompanyAccess(supabase, admin, user.id),
+  ]);
+  if (!paid && !companyAccess) {
     redirect("/onboarding");
+  }
+
+  // A company member goes straight into the app; the (creed-app) layout resolves
+  // their active (company) Creed, and - for an owner who hasn't finished company
+  // setup - resumes company onboarding. They must never be routed through the
+  // personal first-run flow. Only a personal-only paid user gets the section
+  // probe below (personal onboarding when they have no sections yet).
+  if (companyAccess) {
+    redirect("/file");
   }
 
   // `redirect()` works by throwing a NEXT_REDIRECT marker that the

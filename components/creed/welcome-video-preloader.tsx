@@ -7,21 +7,30 @@
 // (same URLs + source order), so those requests are served straight from cache.
 //
 // Keys mirror the SLIDES in welcome-dialog.tsx. Files live in
-// /public/assets/popups/personal/<key>.mp4 (+ optional .webm).
+// /public/assets/popups/<variant>/<key>.mp4 (+ optional .webm). The company
+// variant adds the members slide and pulls from the company folder.
 
-const KEYS = ["file", "connect", "analysis", "panel", "tab", "discord"];
-const MEDIA_BASE = "/assets/popups/personal";
+import type { WelcomeVariant } from "@/lib/welcome-preview";
 
-export function WelcomeVideoPreloader() {
+const PERSONAL_KEYS = ["file", "connect", "analysis", "panel", "tab", "discord"];
+const COMPANY_KEYS = ["file", "members", "connect", "analysis", "panel", "tab", "discord"];
+
+export function WelcomeVideoPreloader({
+  variant = "personal",
+}: {
+  variant?: WelcomeVariant;
+}) {
+  const keys = variant === "company" ? COMPANY_KEYS : PERSONAL_KEYS;
+  const base = `/assets/popups/${variant}`;
   return (
     <div
       aria-hidden
       className="pointer-events-none fixed h-0 w-0 overflow-hidden opacity-0"
     >
-      {KEYS.map((key) => (
+      {keys.map((key) => (
         <video key={key} muted playsInline preload="auto" tabIndex={-1}>
-          <source src={`${MEDIA_BASE}/${key}.webm`} type="video/webm" />
-          <source src={`${MEDIA_BASE}/${key}.mp4`} type="video/mp4" />
+          <source src={`${base}/${key}.webm`} type="video/webm" />
+          <source src={`${base}/${key}.mp4`} type="video/mp4" />
         </video>
       ))}
     </div>

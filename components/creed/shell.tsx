@@ -252,22 +252,31 @@ export function CreedShell({
   }, [router]);
 
   useEffect(() => {
-    const githubConnected = state.settings.integrations.github.status === "connected";
-    preloadSettingsData({
-      scope: state.user.email || state.user.handle,
-      githubConnected,
-      repoOwner: state.settings.versionControl.repoOwner,
-      repoName: state.settings.versionControl.repoName,
-      // The markdown only feeds the GitHub version-status preload, so skip the
-      // full export rebuild entirely when GitHub isn't connected.
-      markdown: githubConnected && state.sections.length ? exportMarkdown() : undefined,
-    });
+    // The settings preload warms the PERSONAL settings screen's shared caches
+    // (AI settings, credits, usage, GitHub). It only runs for personal Creeds:
+    // company mode renders its own settings screen that fetches per-Creed data
+    // directly, and warming these creed-agnostic caches with company data would
+    // leak it back to the personal screen after a Creed switch.
+    if (state.creedType !== "company") {
+      const githubConnected = state.settings.integrations.github.status === "connected";
+      preloadSettingsData({
+        scope: state.user.email || state.user.handle,
+        githubConnected,
+        repoOwner: state.settings.versionControl.repoOwner,
+        repoName: state.settings.versionControl.repoName,
+        // The markdown only feeds the GitHub version-status preload, so skip the
+        // full export rebuild entirely when GitHub isn't connected.
+        markdown: githubConnected && state.sections.length ? exportMarkdown() : undefined,
+      });
+    }
     if (state.sections.length) {
-      preloadMcpHealth();
+      preloadMcpHealth("30d", state.creedId ?? "");
     }
   }, [
     exportMarkdown,
     state.sections,
+    state.creedId,
+    state.creedType,
     state.user.email,
     state.user.handle,
     state.settings.integrations.github.status,

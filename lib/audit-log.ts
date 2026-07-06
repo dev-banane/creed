@@ -11,7 +11,25 @@ export type AuditAction =
   | "ai.settings_updated"
   | "creed.claimed"
   | "creed.composed"
-  | "creed.imported";
+  | "creed.imported"
+  // Company plan
+  | "company.provisioned"
+  | "company.invite_created"
+  | "company.invite_resent"
+  | "company.invite_revoked"
+  | "company.invite_accepted"
+  | "company.invite_declined"
+  | "company.member_removed"
+  | "company.role_changed"
+  | "company.permission_changed"
+  | "company.seats_changed"
+  | "company.byok_updated"
+  | "company.ai_mode_updated"
+  | "company.ownership_transferred"
+  | "company.version_control_updated"
+  | "company.github_connected"
+  | "company.github_disconnected"
+  | "company.deleted";
 
 export type AuditLogInput = {
   userId: string;

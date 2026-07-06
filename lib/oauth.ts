@@ -9,6 +9,7 @@ import "server-only";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { encryptSecret, hashSecret } from "@/lib/secret-crypto";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { log } from "@/lib/observability";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
 
 // The admin client's generated types don't know about the oauth_* tables, so we
@@ -26,7 +27,14 @@ type CodeRow = {
   code_challenge: string;
   scope: string;
   expires_at: string;
+  creed_grants: CreedGrant[] | null;
 };
+
+// A per-Creed MCP grant chosen on the consent screen: which Creed the agent may
+// touch and its ceiling mode. Persisted to oauth_token_creeds when the token is
+// issued; carried on the authorization code in between.
+export type CreedGrantMode = "read-only" | "proposal-only" | "direct";
+export type CreedGrant = { creedId: string; mode: CreedGrantMode };
 type TokenRow = {
   id: string;
   client_id: string;
@@ -62,6 +70,9 @@ export type ResolvedAccessToken = {
   clientId: string;
   clientName: string | null;
   scope: string;
+  // The oauth_tokens row id, used to look up per-Creed grants
+  // (oauth_token_creeds) for the Company plan.
+  tokenId: string;
 };
 
 function generateOpaqueToken(prefix: string) {
@@ -168,6 +179,7 @@ export async function issueAuthorizationCode(input: {
   redirectUri: string;
   codeChallenge: string;
   scope: string;
+  creedGrants: CreedGrant[];
 }): Promise<string> {
   const admin = adminDb();
   const code = generateOpaqueToken("creed_ac");
@@ -178,6 +190,8 @@ export async function issueAuthorizationCode(input: {
     redirect_uri: input.redirectUri,
     code_challenge: input.codeChallenge,
     scope: input.scope,
+    // The Creeds the user granted this connection, carried to token issue.
+    creed_grants: input.creedGrants,
     expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
   });
   if (error) {
@@ -193,14 +207,14 @@ export async function redeemAuthorizationCode(input: {
   clientId: string;
   redirectUri: string;
   codeVerifier: string;
-}): Promise<{ userId: string; scope: string } | { error: string }> {
+}): Promise<{ userId: string; scope: string; creedGrants: CreedGrant[] } | { error: string }> {
   const admin = adminDb();
   const { data, error } = await admin
     .from("oauth_authorization_codes")
     .update({ used_at: new Date().toISOString() })
     .eq("code_hash", hashSecret(input.code))
     .is("used_at", null)
-    .select("client_id, user_id, redirect_uri, code_challenge, scope, expires_at")
+    .select("client_id, user_id, redirect_uri, code_challenge, scope, expires_at, creed_grants")
     .maybeSingle();
 
   if (error) {
@@ -223,33 +237,40 @@ export async function redeemAuthorizationCode(input: {
     return { error: "invalid_grant" };
   }
 
-  return { userId: row.user_id, scope: row.scope };
+  return { userId: row.user_id, scope: row.scope, creedGrants: row.creed_grants ?? [] };
 }
 
 export async function issueTokenPair(input: {
   clientId: string;
   userId: string;
   scope: string;
+  creedGrants: CreedGrant[];
 }): Promise<IssuedTokens> {
   const admin = adminDb();
   const accessToken = generateOpaqueToken("creed_at");
   const refreshToken = generateOpaqueToken("creed_rt");
   const now = Date.now();
 
-  const { error } = await admin.from("oauth_tokens").insert({
-    access_token_hash: hashSecret(accessToken),
-    refresh_token_hash: hashSecret(refreshToken),
-    encrypted_access_token: encryptSecret(accessToken),
-    encrypted_refresh_token: encryptSecret(refreshToken),
-    client_id: input.clientId,
-    user_id: input.userId,
-    scope: input.scope,
-    access_expires_at: new Date(now + ACCESS_TTL_MS).toISOString(),
-    refresh_expires_at: new Date(now + REFRESH_TTL_MS).toISOString(),
-  });
-  if (error) {
-    throw new Error(error.message);
+  const { data, error } = await admin
+    .from("oauth_tokens")
+    .insert({
+      access_token_hash: hashSecret(accessToken),
+      refresh_token_hash: hashSecret(refreshToken),
+      encrypted_access_token: encryptSecret(accessToken),
+      encrypted_refresh_token: encryptSecret(refreshToken),
+      client_id: input.clientId,
+      user_id: input.userId,
+      scope: input.scope,
+      access_expires_at: new Date(now + ACCESS_TTL_MS).toISOString(),
+      refresh_expires_at: new Date(now + REFRESH_TTL_MS).toISOString(),
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not issue token.");
   }
+
+  await writeTokenCreedGrants(admin, (data as { id: string }).id, input.creedGrants);
 
   return {
     accessToken,
@@ -257,6 +278,38 @@ export async function issueTokenPair(input: {
     scope: input.scope,
     accessExpiresInSeconds: Math.floor(ACCESS_TTL_MS / 1000),
   };
+}
+
+// Persist the per-Creed grants for a freshly-issued token. Deduped by creed_id
+// (last mode wins) so a malformed duplicate can't violate the PK. A token with
+// no grants writes nothing; MCP enforcement treats a grant-less token as
+// personal-only, so access never silently widens.
+//
+// Best-effort on purpose: the oauth_tokens row is already committed by the time
+// this runs, and a grant insert can still fail (e.g. a granted Creed was deleted
+// during the ~60s between consent and code exchange, faulting the creed_id FK).
+// Because a grant-less token falls back to personal-only, a lost grant only ever
+// narrows access, never widens it - so we log and continue rather than throw a
+// 500 that would strand a consumed auth code or (on refresh) a revoked token.
+async function writeTokenCreedGrants(
+  admin: SupabaseLikeClient,
+  tokenId: string,
+  grants: CreedGrant[]
+) {
+  const byCreed = new Map<string, CreedGrantMode>();
+  for (const grant of grants) {
+    if (grant.creedId) byCreed.set(grant.creedId, grant.mode);
+  }
+  if (byCreed.size === 0) return;
+  const rows = [...byCreed].map(([creedId, mode]) => ({
+    token_id: tokenId,
+    creed_id: creedId,
+    mode,
+  }));
+  const { error } = await admin.from("oauth_token_creeds").insert(rows);
+  if (error) {
+    log.warn("Could not persist OAuth Creed grants", { tokenId, message: error.message });
+  }
 }
 
 // Refresh rotation: the presented refresh token is revoked and a fresh pair is
@@ -282,6 +335,17 @@ export async function rotateRefreshToken(
     return { error: "invalid_grant" };
   }
 
+  // Carry the old token's per-Creed grants onto the rotated token, otherwise a
+  // connection would lose its Creed scoping on the first refresh (and MCP would
+  // fall back to personal-only for a token that had been granted a company).
+  const { data: grantRows } = await admin
+    .from("oauth_token_creeds")
+    .select("creed_id, mode")
+    .eq("token_id", row.id);
+  const creedGrants: CreedGrant[] = ((grantRows as Array<{ creed_id: string; mode: CreedGrantMode }> | null) ?? []).map(
+    (g) => ({ creedId: g.creed_id, mode: g.mode })
+  );
+
   await admin
     .from("oauth_tokens")
     .update({ revoked_at: new Date().toISOString() })
@@ -291,6 +355,7 @@ export async function rotateRefreshToken(
     clientId: row.client_id,
     userId: row.user_id,
     scope: row.scope,
+    creedGrants,
   });
 }
 
@@ -323,6 +388,7 @@ export async function findOAuthAccessToken(
     clientId: row.client_id,
     clientName: client?.clientName ?? null,
     scope: row.scope,
+    tokenId: row.id,
   };
 }
 

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { resolveAiCredential, deductCredits } from "@/lib/ai/credits";
+import {
+  resolveAiCredential,
+  deductCredits,
+  resolveCompanyAiCredential,
+  deductCompanyCredits,
+} from "@/lib/ai/credits";
 import { callOpenRouter, streamOpenRouter, parseJsonObject } from "@/lib/ai/openrouter";
 import { getAgentModelId } from "@/lib/ai/model-catalog";
 import { recordAiUsage } from "@/lib/ai/persistence";
@@ -13,8 +18,11 @@ import {
   type AgentResult,
   type AgentStreamEvent,
 } from "@/lib/panel/agent";
-import { executeAgentActions } from "@/lib/panel/agent-execute";
-import { loadCreedState } from "@/lib/creed-backend";
+import { executeAgentActions, executeCompanyAgentActions } from "@/lib/panel/agent-execute";
+import { loadActiveCreedState } from "@/lib/creed-backend";
+import { resolveActiveCreed } from "@/lib/creed-context";
+import { getCompanyAccessState } from "@/lib/creed-membership";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sectionBodyMarkdown } from "@/lib/creed-data";
 
 export const maxDuration = 300;
@@ -23,6 +31,27 @@ export async function POST(request: Request) {
   const auth = await requireApiAuth();
   if (auth instanceof NextResponse) return auth;
 
+  // The in-app "Creed" agent works on personal AND company Creeds. On a company
+  // Creed it behaves identically, attributed to the acting member as "[member]'s
+  // Creed", and every edit is enforced per section by companyMcpWrite (Direct
+  // applies immediately, otherwise a proposal) - see executeCompanyAgentActions.
+  const activeCreed = await resolveActiveCreed(auth.supabase, auth.user);
+  const companyEntry = activeCreed?.creeds.find(
+    (c) => c.id === activeCreed.creedId && c.type === "company"
+  );
+  const companyId = companyEntry ? activeCreed!.creedId : undefined;
+
+  // A frozen company is read-only; refuse before spending on a model call.
+  if (companyId) {
+    const admin = getSupabaseAdminClient();
+    if ((await getCompanyAccessState(admin, companyId)) === "frozen") {
+      return NextResponse.json(
+        { error: "This company Creed is read-only until billing is fixed." },
+        { status: 403 }
+      );
+    }
+  }
+
   // Setup (auth, parse, state, credential) happens before the stream so a
   // setup failure returns a normal JSON error the client can read.
   let payloadForStream: {
@@ -30,12 +59,13 @@ export async function POST(request: Request) {
     mentioned: string[];
     sections: Array<{ id: string; name: string; content: string; agentPermission: AgentPermissionValue }>;
     archived: Array<{ id: string; name: string }>;
-    state: Awaited<ReturnType<typeof loadCreedState>>["state"];
+    state: Awaited<ReturnType<typeof loadActiveCreedState>>["state"];
     apiKey: string;
     modelId: string;
     mode: "credits" | "byok";
     sectionIds: Set<string>;
     archivedIds: Set<string>;
+    companyId?: string;
   };
   try {
     const body = (await request.json()) as { query?: unknown; mentioned?: unknown };
@@ -44,10 +74,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing or oversized request." }, { status: 400 });
     }
 
-    const { state } = await loadCreedState(auth.supabase, auth.user, { proposalLimit: 1, activityLimit: 1 });
-    // The in-app agent is the user's own tool, so unlike an external MCP agent
-    // it can see and edit EVERY live section, including hidden ones. How each
-    // edit lands (direct vs proposal) is decided per-section in the executor.
+    const { state } = await loadActiveCreedState(auth.supabase, auth.user, activeCreed);
+    // The in-app agent is the user's own tool, so it works over every live
+    // section it can see (personal: all, including hidden; company: the member's
+    // visible sections). How each edit lands (direct vs proposal) is decided
+    // per-section in the executor.
     const visible = state.sections.filter((section) => !section.archived);
     const sections = visible.map((section) => ({
       id: section.id,
@@ -64,7 +95,9 @@ export async function POST(request: Request) {
       .filter((id): id is string => typeof id === "string" && sectionIds.has(id))
       .slice(0, 10);
 
-    const credential = await resolveAiCredential(auth.supabase, auth.user.id, "panel");
+    const credential = companyId
+      ? await resolveCompanyAiCredential(companyId, "panel")
+      : await resolveAiCredential(auth.supabase, auth.user.id, "panel");
     payloadForStream = {
       query,
       mentioned,
@@ -76,6 +109,7 @@ export async function POST(request: Request) {
       mode: credential.mode,
       sectionIds,
       archivedIds,
+      companyId,
     };
   } catch (error) {
     return NextResponse.json(
@@ -172,12 +206,20 @@ export async function POST(request: Request) {
         let creditBalanceUsd: number | null = null;
         let chargedMicroUsd: number | null = null;
         if (p.mode === "credits") {
-          const debit = await deductCredits({
-            userId: auth.user.id,
-            costUsd: modelResult.costUsd,
-            feature: "panel",
-            modelId: p.modelId,
-          });
+          const debit = p.companyId
+            ? await deductCompanyCredits({
+                creedId: p.companyId,
+                spentBy: auth.user.id,
+                costUsd: modelResult.costUsd,
+                feature: "panel",
+                modelId: p.modelId,
+              })
+            : await deductCredits({
+                userId: auth.user.id,
+                costUsd: modelResult.costUsd,
+                feature: "panel",
+                modelId: p.modelId,
+              });
           if (debit) {
             creditBalanceUsd = debit.balanceUsd;
             chargedMicroUsd = debit.chargedMicroUsd;
@@ -188,6 +230,7 @@ export async function POST(request: Request) {
             await recordAiUsage({
               client: auth.supabase,
               userId: auth.user.id,
+              creedId: p.companyId,
               feature: "panel",
               modelId: p.modelId,
               modelQuality: modelResult.modelQuality,
@@ -229,7 +272,14 @@ export async function POST(request: Request) {
         if (request.signal.aborted) return;
 
         send({ type: "stage", stage: "filing" });
-        const execution = await executeAgentActions({ user: auth.user, actions, state: p.state });
+        const execution = p.companyId
+          ? await executeCompanyAgentActions({
+              user: auth.user,
+              creedId: p.companyId,
+              actions,
+              sections: p.state.sections,
+            })
+          : await executeAgentActions({ user: auth.user, actions, state: p.state });
         send({ type: "stage", stage: "done" });
         const result: AgentResult = {
           ok: execution.ok,

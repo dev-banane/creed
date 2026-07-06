@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { loadCreedState, persistCreedState } from "@/lib/creed-backend";
 import { getGitHubFileSnapshot, pushGitHubFile } from "@/lib/github";
-import { getConfiguredRepo, withAuthenticatedGitHubAccess } from "@/lib/github-version-control";
+import {
+  getConfiguredRepo,
+  requireAuthenticatedUser,
+  withAuthenticatedGitHubAccess,
+} from "@/lib/github-version-control";
+import { resolveManagedCompanyCreedId } from "@/lib/creed-context";
+import { withCompanyGitHubAccess } from "@/lib/company-github";
+import { readCompanyVersionControl, updateCompanyVersionControlSync } from "@/lib/company-version-control";
 
 type PushBody = {
   markdown?: string;
@@ -20,9 +27,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing markdown or local hash." }, { status: 400 });
     }
 
-    const payload = await withAuthenticatedGitHubAccess(async ({
-      supabase,
-      user,
+    const { supabase, user } = await requireAuthenticatedUser();
+
+    // Company managers push the company file to the COMPANY target on the TEAM's
+    // GitHub connection (never a personal token); the sync bookkeeping lands on
+    // the company row. Personal Creeds push on the user's own connection.
+    const companyId = await resolveManagedCompanyCreedId(supabase, user);
+    if (companyId) {
+      const companyVc = await readCompanyVersionControl(companyId);
+      const companyRepo = getConfiguredRepo(companyVc);
+      if (!companyRepo) {
+        throw new Error("Version control is not configured yet. Choose a repo in Settings first");
+      }
+      const payload = await withCompanyGitHubAccess(companyId, async (token) => {
+        const remote = await getGitHubFileSnapshot(
+          token,
+          companyRepo.repoOwner,
+          companyRepo.repoName,
+          companyRepo.path,
+          companyRepo.branch
+        );
+        const result = await pushGitHubFile({
+          accessToken: token,
+          owner: companyRepo.repoOwner,
+          repo: companyRepo.repoName,
+          branch: companyRepo.branch,
+          path: companyRepo.path,
+          message,
+          content: markdown,
+          currentSha: remote?.sha ?? null,
+        });
+        return result;
+      });
+      await updateCompanyVersionControlSync(companyId, {
+        lastRemoteSha: payload.sha,
+        lastRemoteMessage: payload.message,
+        lastRemoteCommittedAt: payload.committedAt,
+        lastSyncedContentHash: localHash,
+        syncStatus: "up-to-date",
+      });
+      return NextResponse.json({
+        ok: true,
+        syncStatus: "up-to-date" as const,
+        remoteSha: payload.sha,
+        remoteMessage: payload.message,
+        remoteCommittedAt: payload.committedAt,
+      });
+    }
+
+    const result = await withAuthenticatedGitHubAccess(async ({
+      supabase: personalSupabase,
+      user: personalUser,
       integration,
       versionControl,
     }) => {
@@ -51,13 +106,13 @@ export async function POST(request: Request) {
         currentSha: remoteFile?.sha ?? null,
       });
 
-      const result = await loadCreedState(supabase, user);
+      const loaded = await loadCreedState(personalSupabase, personalUser);
       const nextState = {
-        ...result.state,
+        ...loaded.state,
         settings: {
-          ...result.state.settings,
+          ...loaded.state.settings,
           versionControl: {
-            ...result.state.settings.versionControl,
+            ...loaded.state.settings.versionControl,
             repoOwner: configuredRepo.repoOwner,
             repoName: configuredRepo.repoName,
             branch: configuredRepo.branch,
@@ -71,7 +126,7 @@ export async function POST(request: Request) {
         },
       };
 
-      await persistCreedState(supabase, user.id, nextState);
+      await persistCreedState(personalSupabase, personalUser.id, nextState);
 
       return {
         ok: true,
@@ -82,7 +137,7 @@ export async function POST(request: Request) {
       };
     });
 
-    return NextResponse.json(payload);
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not push Creed to GitHub.";
     return NextResponse.json(

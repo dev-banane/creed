@@ -1,7 +1,8 @@
 "use client";
 
-// Read-only ledger of credit top-ups and per-call debits, newest first.
+// Read-only display ledger: money-in events plus monthly model-usage spend.
 
+import { useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { CreditTransaction } from "@/components/creed/settings-preload";
-import { featureMeta } from "@/lib/ai/features";
 import { cn } from "@/lib/utils";
 
 function formatUsd(value: number) {
@@ -25,8 +25,48 @@ function formatWhen(iso: string) {
   })}, ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 }
 
-function labelForDebit(feature: string | null) {
-  return feature ? featureMeta(feature).label : "AI usage";
+function monthKey(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function collapseMonthlySpend(transactions: CreditTransaction[]) {
+  const allowanceDateByMonth = new Map<string, string>();
+  for (const tx of transactions) {
+    if (tx.type === "grant") {
+      allowanceDateByMonth.set(monthKey(tx.createdAt), tx.createdAt);
+    }
+  }
+
+  const output: CreditTransaction[] = [];
+  const monthlySpend = new Map<string, CreditTransaction>();
+
+  for (const tx of transactions) {
+    if (tx.type !== "debit" && tx.type !== "monthly-spend") {
+      output.push(tx);
+      continue;
+    }
+
+    const key = monthKey(tx.createdAt);
+    const current = monthlySpend.get(key);
+    const displayDate = allowanceDateByMonth.get(key) ?? tx.createdAt;
+    monthlySpend.set(key, {
+      ...tx,
+      id: `monthly-spend-${key}`,
+      type: "monthly-spend",
+      amountUsd: (current?.amountUsd ?? 0) + tx.amountUsd,
+      balanceAfterUsd:
+        !current || Date.parse(tx.createdAt) > Date.parse(current.createdAt)
+          ? tx.balanceAfterUsd
+          : current.balanceAfterUsd,
+      createdAt: displayDate,
+    });
+  }
+
+  return [...output, ...monthlySpend.values()].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  );
 }
 
 export function CreditsHistoryDialog({
@@ -42,21 +82,26 @@ export function CreditsHistoryDialog({
   // (lifetime), so grant rows read correctly for each.
   allowanceResets: boolean;
 }) {
+  const displayTransactions = useMemo(
+    () => collapseMonthlySpend(transactions),
+    [transactions],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[var(--creed-border)] bg-[var(--creed-surface)]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col overflow-hidden border-[var(--creed-border)] bg-[var(--creed-surface)]">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Credit history</DialogTitle>
-          <DialogDescription>Top-ups and per-call charges, newest first.</DialogDescription>
+          <DialogDescription>Monthly model spend and money added, newest first.</DialogDescription>
         </DialogHeader>
-        {transactions.length === 0 ? (
+        {displayTransactions.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-[var(--creed-text-tertiary)]">
             No credit activity yet.
           </p>
         ) : (
-          <div className="max-h-[320px] overflow-y-auto">
+          <div className="min-h-0 overflow-y-auto creed-scrollbar">
             <ul className="flex flex-col">
-              {transactions.map((tx) => {
+              {displayTransactions.map((tx) => {
                 const isCredit = tx.type === "topup" || tx.type === "grant";
                 const label =
                   tx.type === "topup"
@@ -64,8 +109,8 @@ export function CreditsHistoryDialog({
                     : tx.type === "grant"
                       ? allowanceResets
                         ? "Monthly allowance"
-                        : "Welcome credits"
-                      : labelForDebit(tx.feature);
+                        : "Lifetime credits"
+                      : "Monthly model usage";
                 return (
                   <li
                     key={tx.id}
@@ -81,14 +126,16 @@ export function CreditsHistoryDialog({
                       <div
                         className={cn(
                           "font-mono text-[13px]",
-                          isCredit ? "text-[#16A34A]" : "text-[var(--creed-text-primary)]"
+                          isCredit
+                            ? "text-[#16A34A]"
+                            : "text-[#DC2626] dark:text-[#F87171]"
                         )}
                       >
                         {isCredit ? "+" : "-"}
                         {formatUsd(tx.amountUsd)}
                       </div>
                       <div className="font-mono text-[11px] text-[var(--creed-text-tertiary)]">
-                        {formatUsd(tx.balanceAfterUsd)}
+                        Balance {formatUsd(tx.balanceAfterUsd)}
                       </div>
                     </div>
                   </li>

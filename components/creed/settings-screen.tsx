@@ -10,7 +10,6 @@ import {
   type Ref,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { UserIdentity } from "@supabase/supabase-js";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   AlertTriangle,
@@ -64,6 +63,7 @@ import { AnimatedIconButton } from "@/components/creed/animated-icon-action";
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/creed/searchable-select";
 import { useCreed } from "@/components/creed/creed-provider";
+import { CompanySettings } from "@/components/creed/company-settings";
 import {
   clearSettingsCreditsCache,
   clearSettingsOpenRouterBalanceCache,
@@ -92,7 +92,6 @@ import { AddCreditsDialog } from "@/components/creed/add-credits-dialog";
 import { CreditsHistoryDialog } from "@/components/creed/credits-history-dialog";
 import { LOW_ALLOWANCE_RATIO } from "@/lib/ai/credit-config";
 import { AI_FEATURES, featureMeta } from "@/lib/ai/features";
-import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
   accentColorMap,
   type AgentPermission,
@@ -101,29 +100,9 @@ import {
 import { cn } from "@/lib/utils";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
 
-const GITHUB_CONNECTED_EVENT = "creed:github-connected";
-
 function looksLikeApiKey(value: string) {
   const trimmed = value.trim();
   return trimmed.length >= 20 && /^[A-Za-z0-9._-]+$/.test(trimmed);
-}
-
-function formatGitHubConnectError(error: unknown) {
-  const message =
-    error instanceof Error ? error.message : "Couldn't connect GitHub";
-  const code =
-    typeof error === "object" && error !== null && "code" in error
-      ? String((error as { code?: unknown }).code ?? "")
-      : "";
-
-  if (
-    code === "manual_linking_disabled" ||
-    /manual linking is disabled/i.test(message)
-  ) {
-    return "Enable Manual Linking in Supabase Auth first";
-  }
-
-  return message;
 }
 
 function formatGitHubAccessError(message: string) {
@@ -146,34 +125,18 @@ function formatGitHubAccessErrorForState(message: string, githubConnected: boole
   return formatGitHubAccessError(message);
 }
 
-// "x" is Supabase's X / Twitter (OAuth 2.0) provider; a linked identity may
-// still report the legacy "twitter" provider string, so detection matches both.
-type LoginProvider = "google" | "x";
-
-const LOGIN_PROVIDER_LABEL: Record<LoginProvider, string> = {
-  google: "Google",
-  x: "X",
-};
-
-function matchesProvider(identityProvider: string, provider: LoginProvider) {
-  if (provider === "x") return identityProvider === "x" || identityProvider === "twitter";
-  return identityProvider === provider;
-}
-
-// Providers that count as a way to sign in. A user must keep at least one, so
-// disconnecting the last sign-in method is blocked.
-const SIGN_IN_PROVIDERS = ["google", "x", "twitter", "email"];
-
-function identityAccountLabel(identity: UserIdentity | null): string | undefined {
-  const data = (identity?.identity_data ?? {}) as Record<string, unknown>;
-  for (const key of ["email", "user_name", "preferred_username", "name"]) {
-    const value = data[key];
-    if (typeof value === "string" && value.trim()) return value;
-  }
-  return undefined;
-}
-
+// The /settings surface switches on the active Creed: company Creeds get the
+// company management screen (members, permissions, billing); personal Creeds get
+// the original settings below. Personal behaviour is unchanged.
 export function SettingsScreen() {
+  const { state } = useCreed();
+  if (state.creedType === "company") {
+    return <CompanySettings />;
+  }
+  return <PersonalSettingsScreen />;
+}
+
+function PersonalSettingsScreen() {
   const router = useRouter();
   const {
     state,
@@ -201,11 +164,6 @@ export function SettingsScreen() {
   const [deleting, setDeleting] = useState(false);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [disconnectingGitHub, setDisconnectingGitHub] = useState(false);
-  // Login identities (Google + X) shown in Integrations, loaded live from
-  // Supabase so connect / disconnect reflects the real account state.
-  const [identities, setIdentities] = useState<UserIdentity[] | null>(null);
-  const [linkingProvider, setLinkingProvider] = useState<LoginProvider | null>(null);
-  const [unlinkingProvider, setUnlinkingProvider] = useState<LoginProvider | null>(null);
   const [reposLoading, setReposLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [repos, setRepos] = useState<RepoOption[]>([]);
@@ -267,6 +225,23 @@ export function SettingsScreen() {
     }
   }, [router, state.sections.length]);
 
+  async function saveDisplayName() {
+    const next = nameDraft.trim();
+    if (!next || next === state.user.name) {
+      setNameDraft(state.user.name);
+      return;
+    }
+
+    const ok = await setDisplayName(next);
+    if (ok) {
+      setNameDraft(next);
+      toast.success("Name updated.");
+    } else {
+      setNameDraft(state.user.name);
+      toast.error("Could not update name.");
+    }
+  }
+
   const githubStatus = state.settings.integrations.github.status;
   const githubConnected = githubStatus === "connected";
   const githubDisconnected = githubStatus === "disconnected";
@@ -279,16 +254,38 @@ export function SettingsScreen() {
       ? `https://github.com/${selectedRepoFullName}/commit/${versionStatus.remoteSha}`
       : null;
 
+  // After the standalone GitHub OAuth round-trip, the callback redirects back to
+  // /settings?github=<status>. Toast it, bump the refresh tick so repos /
+  // branches / sync-status refetch, then strip the param so a reload doesn't
+  // re-toast.
   useEffect(() => {
-    function handleGitHubConnected() {
-      setGitHubRefreshTick((current) => current + 1);
-    }
-
-    window.addEventListener(GITHUB_CONNECTED_EVENT, handleGitHubConnected);
-    return () => {
-      window.removeEventListener(GITHUB_CONNECTED_EVENT, handleGitHubConnected);
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("github");
+    if (!status) return;
+    const messages: Record<string, { ok: boolean; text: string }> = {
+      connected: { ok: true, text: "GitHub connected." },
+      error: { ok: false, text: "Could not connect GitHub. Please try again." },
+      notconfigured: {
+        ok: false,
+        text: "GitHub isn't available on this deployment yet.",
+      },
+      invalid: { ok: false, text: "Could not start the GitHub connection." },
+      forbidden: { ok: false, text: "You can't manage this GitHub connection." },
     };
-  }, []);
+    const message = messages[status];
+    if (message) (message.ok ? toast.success : toast.error)(message.text);
+    params.delete("github");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+    if (message?.ok) {
+      setGitHubRefreshTick((current) => current + 1);
+      void refreshState();
+    }
+  }, [refreshState]);
 
   useEffect(() => {
     if (!githubConnected) {
@@ -606,129 +603,27 @@ export function SettingsScreen() {
     }
   }
 
-  // Load the user's linked identities so the Google / X rows reflect the real
-  // account state, and refresh whenever auth changes (e.g. after a link).
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-    let active = true;
 
-    async function load() {
-      const { data, error } = await supabase.auth.getUserIdentities();
-      if (!active) return;
-      setIdentities(error ? [] : data.identities ?? []);
-    }
-
-    void load();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void load();
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const googleIdentity = identities?.find((identity) => identity.provider === "google") ?? null;
-  const xIdentity = identities?.find((identity) => matchesProvider(identity.provider, "x")) ?? null;
-  const signInMethodCount = (identities ?? []).filter((identity) =>
-    SIGN_IN_PROVIDERS.includes(identity.provider)
-  ).length;
-
-  async function handleConnectIdentity(provider: LoginProvider) {
-    try {
-      setLinkingProvider(provider);
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.auth.linkIdentity({
-        provider,
-        options: { redirectTo: `${window.location.origin}/auth/callback?next=/settings` },
-      });
-      if (error) throw error;
-      // On success the browser is navigating to the provider; nothing else runs.
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : `Couldn't connect ${LOGIN_PROVIDER_LABEL[provider]}`
-      );
-      setLinkingProvider(null);
-    }
-  }
-
-  async function handleDisconnectIdentity(provider: LoginProvider) {
-    const label = LOGIN_PROVIDER_LABEL[provider];
-    const identity = identities?.find((entry) => matchesProvider(entry.provider, provider)) ?? null;
-    if (!identity) return;
-    if (signInMethodCount <= 1) {
-      toast.error("Add another sign-in method before disconnecting this one.");
-      return;
-    }
-    try {
-      setUnlinkingProvider(provider);
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.auth.unlinkIdentity(identity);
-      if (error) throw error;
-      const { data } = await supabase.auth.getUserIdentities();
-      setIdentities(data?.identities ?? []);
-      toast.success(`${label} disconnected`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : `Couldn't disconnect ${label}`);
-    } finally {
-      setUnlinkingProvider(null);
-    }
-  }
-
-  async function handleConnectGitHub() {
-    try {
-      setConnectingGitHub(true);
-      const supabase = getSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/auth/callback?next=/settings&integration=github`;
-      const { error } = await supabase.auth.linkIdentity({
-        provider: "github",
-        options: {
-          redirectTo,
-          scopes: "repo read:user",
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error) {
-      toast.error(formatGitHubConnectError(error));
-      setConnectingGitHub(false);
-    }
+  // GitHub is connected through the standalone "Creed" OAuth App (not Supabase
+  // identity linking): a full-page redirect to /api/app/github/authorize, which
+  // bounces through GitHub and back to /settings?github=<status> (handled above).
+  function handleConnectGitHub() {
+    setConnectingGitHub(true);
+    window.location.href = "/api/app/github/authorize?mode=personal";
   }
 
   async function handleDisconnectGitHub() {
     try {
       setDisconnectingGitHub(true);
-      const supabase = getSupabaseBrowserClient();
-      const { data, error } = await supabase.auth.getUserIdentities();
-
-      if (error) {
-        throw error;
-      }
-
-      const githubIdentity = data.identities.find(
-        (identity: UserIdentity) => identity.provider === "github"
-      );
-      if (githubIdentity) {
-        const unlinkResult = await supabase.auth.unlinkIdentity(githubIdentity);
-        if (unlinkResult.error) {
-          throw unlinkResult.error;
-        }
-      }
-
       const response = await fetch("/api/app/github/integration", {
         method: "DELETE",
       });
-      const payload = (await response.json()) as { error?: string };
-
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(payload.error || "Could not disconnect GitHub");
       }
-
       await refreshState();
       toast.success("GitHub disconnected");
       setRepos([]);
@@ -911,12 +806,12 @@ export function SettingsScreen() {
               <div className="min-w-0 flex-1 space-y-3">
                 <div>
                   <label className="mb-2 block text-[14px] font-medium text-[var(--creed-text-secondary)]">
-                    Display name
+                    Name
                   </label>
                   <Input
                     value={nameDraft}
                     onChange={(event) => setNameDraft(event.target.value)}
-                    onBlur={() => setDisplayName(nameDraft)}
+                    onBlur={() => void saveDisplayName()}
                     className="h-11 rounded-xl border-[var(--creed-border)] bg-[var(--creed-surface)] px-4 text-[15px]"
                   />
                 </div>
@@ -1029,44 +924,6 @@ export function SettingsScreen() {
               Integrations
             </h2>
             <div className="mt-4 divide-y divide-[var(--creed-border)] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface)]">
-              <IntegrationRow
-                title="Google"
-                icon={<GoogleMark className="h-7 w-7" />}
-                status={identities === null ? undefined : googleIdentity ? "connected" : "not-connected"}
-                statusLabel={
-                  identities === null ? undefined : googleIdentity ? "Connected" : "Not connected"
-                }
-                secondaryLabel={googleIdentity ? identityAccountLabel(googleIdentity) : undefined}
-                action={
-                  <IdentityAction
-                    loading={identities === null}
-                    connected={Boolean(googleIdentity)}
-                    label="Google"
-                    pending={linkingProvider === "google" || unlinkingProvider === "google"}
-                    onConnect={() => void handleConnectIdentity("google")}
-                    onDisconnect={() => void handleDisconnectIdentity("google")}
-                  />
-                }
-              />
-              <IntegrationRow
-                title="X"
-                icon={<XMark className="h-6 w-6 text-[#0F1419] dark:text-[var(--creed-text-primary)]" />}
-                status={identities === null ? undefined : xIdentity ? "connected" : "not-connected"}
-                statusLabel={
-                  identities === null ? undefined : xIdentity ? "Connected" : "Not connected"
-                }
-                secondaryLabel={xIdentity ? identityAccountLabel(xIdentity) : undefined}
-                action={
-                  <IdentityAction
-                    loading={identities === null}
-                    connected={Boolean(xIdentity)}
-                    label="X"
-                    pending={linkingProvider === "x" || unlinkingProvider === "x"}
-                    onConnect={() => void handleConnectIdentity("x")}
-                    onDisconnect={() => void handleDisconnectIdentity("x")}
-                  />
-                }
-              />
               <IntegrationRow
                 title="GitHub"
                 icon={<GitHubMark className="h-7 w-7 text-[#24292F] dark:text-[var(--creed-text-primary)]" />}
@@ -1679,7 +1536,7 @@ export function SettingsScreen() {
   );
 }
 
-function ConnectButton({
+export function ConnectButton({
   label,
   loading,
   onClick,
@@ -1707,7 +1564,7 @@ function ConnectButton({
   );
 }
 
-function DisconnectButton({
+export function DisconnectButton({
   label,
   loading,
   onClick,
@@ -1735,34 +1592,7 @@ function DisconnectButton({
   );
 }
 
-// Connect / disconnect control for a login identity (Google, X). Shows a quiet
-// spinner while identities are still loading so the row never flips state.
-function IdentityAction({
-  loading,
-  connected,
-  label,
-  pending,
-  onConnect,
-  onDisconnect,
-}: {
-  loading: boolean;
-  connected: boolean;
-  label: string;
-  pending: boolean;
-  onConnect: () => void;
-  onDisconnect: () => void;
-}) {
-  if (loading) {
-    return <LoaderCircle className="h-4 w-4 animate-spin text-[var(--creed-text-tertiary)]" />;
-  }
-  return connected ? (
-    <DisconnectButton label={label} loading={pending} onClick={onDisconnect} />
-  ) : (
-    <ConnectButton label={label} loading={pending} onClick={onConnect} />
-  );
-}
-
-function IntegrationRow({
+export function IntegrationRow({
   title,
   icon,
   action,
@@ -1817,7 +1647,7 @@ function IntegrationRow({
   );
 }
 
-function UsageCard({
+export function UsageCard({
   usage,
   range,
   onRangeChange,
@@ -1982,37 +1812,6 @@ function formatUsageDate(value: string) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function GoogleMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
-      <path
-        d="M21.8 12.23c0-.7-.06-1.22-.2-1.76H12v3.33h5.64c-.11.83-.7 2.08-2 2.92l-.02.11 2.72 2.11.19.02c1.75-1.61 2.77-3.98 2.77-6.73Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 22c2.76 0 5.08-.91 6.78-2.47l-3.23-2.5c-.86.6-2.01 1.02-3.55 1.02-2.7 0-4.99-1.78-5.81-4.24l-.1.01-2.82 2.19-.03.1A10.24 10.24 0 0 0 12 22Z"
-        fill="#34A853"
-      />
-      <path
-        d="M6.19 13.81A6.15 6.15 0 0 1 5.87 12c0-.63.11-1.24.3-1.81l-.01-.12-2.86-2.22-.09.04A10.26 10.26 0 0 0 2 12c0 1.65.39 3.2 1.08 4.55l3.11-2.74Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.95c1.94 0 3.25.84 4 1.54l2.92-2.85C17.07 2.91 14.76 2 12 2a10.24 10.24 0 0 0-8.79 4.89l3.1 2.4C7.12 7.73 9.31 5.95 12 5.95Z"
-        fill="#EA4335"
-      />
-    </svg>
-  );
-}
-
-function XMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
-
 function GitHubMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
@@ -2138,4 +1937,3 @@ function SectionPermissionControl({
     </div>
   );
 }
-

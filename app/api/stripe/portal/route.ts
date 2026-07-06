@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getEntitlement, getStripeClient } from "@/lib/stripe";
 import { getSiteUrl } from "@/lib/supabase/env";
+import { resolveOwnedCompanyCreedId } from "@/lib/creed-context";
+import { getCompanyBilling } from "@/lib/company-billing";
 import { log } from "@/lib/observability";
 
 // Auth-required. Opens the Stripe Customer Portal so a subscriber can update
@@ -19,8 +21,18 @@ export async function POST() {
   const { user } = auth;
 
   try {
-    const entitlement = await getEntitlement(user.id);
-    if (!entitlement?.stripeCustomerId) {
+    // When the active Creed is a company this user owns, manage the COMPANY
+    // subscription's customer; otherwise the personal entitlement's.
+    const companyId = await resolveOwnedCompanyCreedId(auth.supabase, user);
+    let customerId: string | null = null;
+    if (companyId) {
+      const billing = await getCompanyBilling(companyId);
+      customerId = billing?.stripe_customer_id ?? null;
+    } else {
+      const entitlement = await getEntitlement(user.id);
+      customerId = entitlement?.stripeCustomerId ?? null;
+    }
+    if (!customerId) {
       return NextResponse.json(
         { error: "No billing account to manage yet." },
         { status: 400 }
@@ -28,7 +40,7 @@ export async function POST() {
     }
 
     const session = await getStripeClient().billingPortal.sessions.create({
-      customer: entitlement.stripeCustomerId,
+      customer: customerId,
       return_url: `${getSiteUrl()}/file`,
     });
 

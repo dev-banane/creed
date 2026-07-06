@@ -10,11 +10,19 @@ import {
 } from "@/lib/creed-data";
 import { callOpenRouter, parseJsonObject } from "@/lib/ai/openrouter";
 import { recordAiUsage } from "@/lib/ai/persistence";
-import { deductCredits, resolveAiCredential } from "@/lib/ai/credits";
+import {
+  deductCredits,
+  deductCompanyCredits,
+  resolveAiCredential,
+  resolveCompanyAiCredential,
+} from "@/lib/ai/credits";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   buildQualityPrompt,
   buildQualityResponseFormat,
   CREED_QUALITY_RUBRIC_VERSION,
+  qualitySubject,
+  type QualityScope,
 } from "@/lib/ai/quality-rubric";
 import { log } from "@/lib/observability";
 
@@ -381,7 +389,20 @@ function assembleReport({
 // Validate a stored (full-shape) report against the current sections. Used when
 // reading a persisted report (cache hit, baseline read, the MCP read path). The
 // model-response path uses `normalizeSectionReport` + `assembleReport` instead.
-export function validateQualityReport(value: unknown, sections: CreedSection[], contentHash: string): CreedQualityReport {
+export function validateQualityReport(
+  value: unknown,
+  sections: CreedSection[],
+  contentHash: string,
+  // A company report is one shared report, generated over ALL sections and keyed
+  // by creed_id, but each member reads it scoped to the sections they can see.
+  // For a company read we must show the SAME thing to everyone: the stored shared
+  // overall score (not one recomputed over the reader's visible subset, which
+  // would differ per member) and the full shared narrative (score + tags +
+  // strengths + gaps), so a member sees the identical headline and description as
+  // the owner. Personal reads (companyRead=false) recompute the score from the
+  // owner's own sections, which they always see in full - byte-identical to before.
+  companyRead = false,
+): CreedQualityReport {
   const root = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const rawOverall = root.overall && typeof root.overall === "object" ? (root.overall as Record<string, unknown>) : {};
   const rawSections = Array.isArray(root.sections) ? root.sections : [];
@@ -391,13 +412,19 @@ export function validateQualityReport(value: unknown, sections: CreedSection[], 
   );
   const overall = parseOverallQualitative(rawOverall);
 
+  // The shared score written by the run/merge path (computeOverallScore over the
+  // full file). Used verbatim for company reads so every member sees one true
+  // number; falls back to a recompute if an old row has no stored score.
+  const storedScore =
+    typeof rawOverall.score === "number" && Number.isFinite(rawOverall.score)
+      ? rawOverall.score
+      : null;
+
   return {
     contentHash,
     overall: {
-      // Always recomputed from the sections (which are themselves re-clamped to
-      // the evidence ladder), so the headline can never drift from its sections,
-      // even when reading an older stored report.
-      score: computeOverallScore(sectionReports),
+      score:
+        companyRead && storedScore !== null ? storedScore : computeOverallScore(sectionReports),
       summary: overall.summary,
       tags: overall.tags,
       strength: overall.strength,
@@ -428,14 +455,20 @@ function overallQualitativeFromReport(report: CreedQualityReport): OverallQualit
   };
 }
 
-async function readCachedReport(client: unknown, userId: string, contentHash: string) {
+// A company report is shared and keyed by creed_id; a personal report is the
+// per-user row keyed by user_id. When creedId is set, reads/writes go by
+// creed_id (so every member sees the one shared report); otherwise the personal
+// path is byte-identical to before.
+async function readCachedReport(
+  client: unknown,
+  userId: string,
+  contentHash: string,
+  creedId?: string
+) {
   const db = client as SupabaseLikeClient;
-  const { data, error } = await db
-    .from("creed_quality_reports")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("content_hash", contentHash)
-    .maybeSingle();
+  let query = db.from("creed_quality_reports").select("*").eq("content_hash", contentHash);
+  query = creedId ? query.eq("creed_id", creedId) : query.eq("user_id", userId);
+  const { data, error } = await query.order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
   assertNoError(error, "Could not load quality report.");
   return data as {
@@ -444,13 +477,13 @@ async function readCachedReport(client: unknown, userId: string, contentHash: st
   } | null;
 }
 
-export async function readLatestQualityReport(client: unknown, userId: string) {
+export async function readLatestQualityReport(client: unknown, userId: string, creedId?: string) {
   const db = client as SupabaseLikeClient;
-  const { data, error } = await db
-    .from("creed_quality_reports")
-    .select("*")
-    .eq("user_id", userId)
+  let query = db.from("creed_quality_reports").select("*");
+  query = creedId ? query.eq("creed_id", creedId) : query.eq("user_id", userId);
+  const { data, error } = await query
     .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   assertNoError(error, "Could not load quality report.");
@@ -489,15 +522,22 @@ function readStoredSectionHashes(row: { section_hashes?: unknown; report?: unkno
 export async function readQualityBaseline({
   client,
   userId,
+  creedId,
   sections,
+  companyRead = false,
 }: {
   client: unknown;
   userId: string;
+  // The report key (personal creed or shared company creed). Always set.
+  creedId: string;
   sections: CreedSection[];
+  // True for company reads: show the shared stored overall score + full narrative
+  // to every member, not a per-viewer recompute (see validateQualityReport).
+  companyRead?: boolean;
 }) {
   const contentHash = hashCreedSections(sections);
   const sectionHashes = hashCreedSectionsById(sections);
-  const latest = await readLatestQualityReport(client, userId);
+  const latest = await readLatestQualityReport(client, userId, creedId);
   if (!latest?.report) {
     return {
       report: null,
@@ -510,7 +550,12 @@ export async function readQualityBaseline({
   }
 
   return {
-    report: validateQualityReport(latest.report, sections, latest.content_hash || contentHash),
+    report: validateQualityReport(
+      latest.report,
+      sections,
+      latest.content_hash || contentHash,
+      companyRead,
+    ),
     contentHash,
     sectionHashes,
     storedContentHash: latest.content_hash ?? null,
@@ -519,43 +564,120 @@ export async function readQualityBaseline({
   };
 }
 
-// Best-effort persist of the single per-user report row. The client already
-// has the report in the response, so a write hiccup must never fail (or
-// raw-toast) the analysis.
+type StoredReport = CreedQualityReport & { rubricVersion?: string };
+type ReportWithHashes = CreedQualityReport & { sectionHashes: Record<string, string>; rubricVersion: string };
+
+// Merge a freshly-graded (possibly partial) company report into the stored
+// shared report so a run never drops sections the runner couldn't see. The
+// fresh report's section entries win; every other stored section carries
+// forward untouched. A run whose fresh report covers every stored section (an
+// owner/admin whole-file run) fully replaces the overall narrative; a partial
+// (member) run keeps the stored narrative and just refreshes the score. The
+// stored full-file content hash is preserved on a partial run - a re-grade does
+// not change the file, so "is this report current?" stays keyed to the last
+// whole-file analysis.
+function mergeSharedReport(
+  stored: StoredReport | null,
+  fresh: ReportWithHashes,
+  storedSectionHashes: Record<string, string> | null,
+  freshSectionHashes: Record<string, string>,
+  storedContentHash: string | null,
+  freshContentHash: string,
+): { report: ReportWithHashes; sectionHashes: Record<string, string>; contentHash: string } {
+  if (!stored?.sections?.length) {
+    return { report: fresh, sectionHashes: freshSectionHashes, contentHash: freshContentHash };
+  }
+  const bySectionId = new Map(stored.sections.map((section) => [section.sectionId, section]));
+  for (const section of fresh.sections) bySectionId.set(section.sectionId, section);
+  const mergedSections = [...bySectionId.values()];
+
+  const freshIds = new Set(fresh.sections.map((section) => section.sectionId));
+  const freshCoversStored = stored.sections.every((section) => freshIds.has(section.sectionId));
+  const overall = freshCoversStored ? fresh.overall : stored.overall;
+  const contentHash = freshCoversStored ? freshContentHash : storedContentHash ?? freshContentHash;
+
+  const report: ReportWithHashes = {
+    ...fresh,
+    contentHash,
+    overall: { ...overall, score: computeOverallScore(mergedSections) },
+    sections: mergedSections,
+  };
+  return {
+    report,
+    sectionHashes: { ...(storedSectionHashes ?? {}), ...freshSectionHashes },
+    contentHash,
+  };
+}
+
+// Best-effort persist of the single report row (per-user personal, per-creed
+// company). The client already has the report in the response, so a write
+// hiccup must never fail (or raw-toast) the analysis. The table has no
+// INSERT/UPDATE RLS policy - writes are service-role only - so this always uses
+// the admin client. `mergeShared` merges into the stored company report instead
+// of replacing it (see mergeSharedReport); personal writes replace as before.
 async function persistQualityReport({
-  client,
   userId,
+  creedId,
+  mergeShared = false,
   reportWithHashes,
   contentHash,
   sectionHashes,
   modelId,
 }: {
-  client: unknown;
   userId: string;
-  reportWithHashes: CreedQualityReport & { sectionHashes: Record<string, string>; rubricVersion: string };
+  creedId: string;
+  mergeShared?: boolean;
+  reportWithHashes: ReportWithHashes;
   contentHash: string;
   sectionHashes: Record<string, string>;
   modelId: string;
 }) {
   try {
     const now = new Date().toISOString();
-    const db = client as SupabaseLikeClient;
+    const db = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
+
+    let report: ReportWithHashes = reportWithHashes;
+    let hashes = sectionHashes;
+    let hash = contentHash;
+    if (mergeShared) {
+      const { data: stored } = (await db
+        .from("creed_quality_reports")
+        .select("report, content_hash, section_hashes")
+        .eq("creed_id", creedId)
+        .maybeSingle()) as {
+        data: { report?: StoredReport; content_hash?: string; section_hashes?: Record<string, string> } | null;
+      };
+      const merged = mergeSharedReport(
+        stored?.report ?? null,
+        reportWithHashes,
+        stored?.section_hashes ?? null,
+        sectionHashes,
+        stored?.content_hash ?? null,
+        contentHash,
+      );
+      report = merged.report;
+      hashes = merged.sectionHashes;
+      hash = merged.contentHash;
+    }
+
     const { error } = await db.from("creed_quality_reports").upsert(
       {
         user_id: userId,
-        content_hash: contentHash,
-        section_hashes: sectionHashes,
+        creed_id: creedId,
+        content_hash: hash,
+        section_hashes: hashes,
         model_id: modelId,
-        report: reportWithHashes,
+        report,
         created_at: now,
         updated_at: now,
       },
-      { onConflict: "user_id" }
+      { onConflict: "creed_id" },
     );
     assertNoError(error, "Could not save quality report.");
   } catch (cause) {
     log.warn("quality_report_persist_failed", {
       userId,
+      creedId,
       message: cause instanceof Error ? cause.message : String(cause),
     });
   }
@@ -569,12 +691,28 @@ async function persistQualityReport({
 export async function analyzeCreedQuality({
   client,
   userId,
+  creedId,
+  companyId,
+  allowedTargetIds,
   sections: allSections,
   force = false,
   targetSectionIds,
 }: {
   client: unknown;
   userId: string;
+  // The report key. Every report (personal or company) is keyed by creed_id: a
+  // personal report by the owner's personal creed, a company report by the
+  // shared company creed (so every member sees the one report).
+  creedId: string;
+  // Set only for a company analysis: bill the company wallet and use the company
+  // credential, attributed to userId (the owner/admin who ran it). Unset for a
+  // personal analysis, which bills the personal wallet exactly as before.
+  companyId?: string;
+  // Company only: the sections this caller is allowed to (re)grade - owner/admin
+  // get every section (undefined = no cap); a member gets just the sections they
+  // hold propose/direct on. Targets are capped to this set, so a member run only
+  // re-scores their editable sections and merges into the shared report.
+  allowedTargetIds?: string[];
   sections: CreedSection[];
   force?: boolean;
   targetSectionIds?: string[];
@@ -586,7 +724,7 @@ export async function analyzeCreedQuality({
   const sectionHashes = hashCreedSectionsById(sections);
 
   if (!force) {
-    const cached = await readCachedReport(client, userId, contentHash);
+    const cached = await readCachedReport(client, userId, contentHash, creedId);
     if (cached?.report) {
       const storedHashes = readStoredSectionHashes(cached);
       return {
@@ -600,7 +738,7 @@ export async function analyzeCreedQuality({
   }
 
   // Load the prior report so unchanged sections can carry their score forward.
-  const latest = await readLatestQualityReport(client, userId);
+  const latest = await readLatestQualityReport(client, userId, creedId);
   const priorReport = latest?.report
     ? validateQualityReport(latest.report, sections, latest.content_hash || contentHash)
     : null;
@@ -618,13 +756,17 @@ export async function analyzeCreedQuality({
   // whatever drifted.
   const sectionIds = sections.map((section) => section.id);
   const requested = targetSectionIds?.filter((id) => sectionIds.includes(id));
-  const targets = !priorReport || rubricStale
+  const computedTargets = !priorReport || rubricStale
     ? sectionIds
     : requested && requested.length
       ? requested
       : sections
           .filter((section) => priorSectionHashes[section.id] !== sectionHashes[section.id] || !priorById.has(section.id))
           .map((section) => section.id);
+  // Cap to the caller's allowed set (company members can only re-grade sections
+  // they can edit). Owner/admin and personal pass no cap.
+  const allowed = allowedTargetIds ? new Set(allowedTargetIds) : null;
+  const targets = allowed ? computedTargets.filter((id) => allowed.has(id)) : computedTargets;
 
   // Nothing drifted: recompute the deterministic overall over the carried
   // forward sections and return without a model call or a charge.
@@ -639,18 +781,31 @@ export async function analyzeCreedQuality({
     const reportWithHashes = { ...report, sectionHashes, rubricVersion: CREED_QUALITY_RUBRIC_VERSION };
     if (latest?.content_hash !== contentHash) {
       await persistQualityReport({
-        client,
         userId,
+        creedId,
+        mergeShared: Boolean(companyId),
         reportWithHashes,
         contentHash,
         sectionHashes,
         modelId: latest?.model_id ?? "carry-forward",
       });
     }
+    if (companyId) {
+      // Same shared-report scoping as the model-run return below, so a company
+      // caller sees the one true overall, not a subset recompute.
+      const shared = await readQualityBaseline({ client, userId, creedId, sections, companyRead: true });
+      if (shared.report) {
+        return { report: shared.report, contentHash, sectionHashes, cached: false, creditBalanceUsd: null };
+      }
+    }
     return { report: reportWithHashes, contentHash, sectionHashes, cached: false, creditBalanceUsd: null };
   }
 
-  const credential = await resolveAiCredential(client, userId, "analysis");
+  const credential = companyId
+    ? await resolveCompanyAiCredential(companyId, "analysis")
+    : await resolveAiCredential(client, userId, "analysis");
+  const qualityScope: QualityScope = companyId ? "company" : "personal";
+  const qualitySubjectText = qualitySubject(qualityScope);
   const result = await callOpenRouter({
     apiKey: credential.apiKey,
     modelId: credential.modelId,
@@ -666,11 +821,11 @@ export async function analyzeCreedQuality({
     messages: [
       {
         role: "system",
-        content: `Score how well this Creed (a personal context profile every AI reads before talking to its owner) lets a fresh AI know the user. Use rubric ${CREED_QUALITY_RUBRIC_VERSION}. Be strict, specific, and consistent. Judge how complete, accurate, current, and concrete the profile is - not how it would help engineering. Return valid JSON only.`,
+        content: `Score how well this Creed (${qualitySubjectText.noun}) ${qualitySubjectText.purpose}. Use rubric ${CREED_QUALITY_RUBRIC_VERSION}. Be strict, specific, and consistent. Judge how complete, accurate, current, and concrete the file is - not how it would help engineering. Return valid JSON only.`,
       },
       {
         role: "user",
-        content: buildQualityPrompt(sections, targets),
+        content: buildQualityPrompt(sections, targets, qualityScope),
       },
     ],
   });
@@ -716,12 +871,20 @@ export async function analyzeCreedQuality({
   let creditBalanceUsd: number | null = null;
   let chargedMicroUsd: number | null = null;
   if (credential.mode === "credits") {
-    const debit = await deductCredits({
-      userId,
-      costUsd: result.costUsd,
-      feature: "analysis",
-      modelId: credential.modelId,
-    });
+    const debit = companyId
+      ? await deductCompanyCredits({
+          creedId: companyId,
+          spentBy: userId,
+          costUsd: result.costUsd,
+          feature: "analysis",
+          modelId: credential.modelId,
+        })
+      : await deductCredits({
+          userId,
+          costUsd: result.costUsd,
+          feature: "analysis",
+          modelId: credential.modelId,
+        });
     if (debit) {
       creditBalanceUsd = debit.balanceUsd;
       chargedMicroUsd = debit.chargedMicroUsd;
@@ -729,8 +892,9 @@ export async function analyzeCreedQuality({
   }
 
   await persistQualityReport({
-    client,
     userId,
+    creedId,
+    mergeShared: Boolean(companyId),
     reportWithHashes,
     contentHash,
     sectionHashes,
@@ -745,6 +909,9 @@ export async function analyzeCreedQuality({
       await recordAiUsage({
         client,
         userId,
+        // Stamp company usage with the company creed so the shared spend chart
+        // attributes it; personal usage stays creed-less exactly as before.
+        creedId: companyId,
         feature: "analysis",
         modelId: credential.modelId,
         modelQuality: result.modelQuality,
@@ -759,6 +926,17 @@ export async function analyzeCreedQuality({
     } catch {
       // Usage logging is best-effort; a completed, charged analysis must not
       // fail just because the spend-chart insert hiccupped.
+    }
+  }
+
+  if (companyId) {
+    // Return exactly what every member reads: the just-persisted shared report
+    // (full-file overall score + narrative) scoped to this caller's visible
+    // sections. Without this the runner would briefly show an overall recomputed
+    // over its own subset - a transient number nobody else sees.
+    const shared = await readQualityBaseline({ client, userId, creedId, sections, companyRead: true });
+    if (shared.report) {
+      return { report: shared.report, contentHash, sectionHashes, cached: false, creditBalanceUsd };
     }
   }
 

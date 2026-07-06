@@ -63,12 +63,7 @@ export const CREED_SEED_VERSION = "2026-04-18-agent-behavior-v1";
 export type ActorType = "user" | "agent";
 
 export type SectionTemplate =
-  | "identity"
-  | "stack"
-  | "principles"
-  | "focus"
-  | "projects"
-  | "freeform";
+  "identity" | "stack" | "principles" | "focus" | "projects" | "freeform";
 
 // Per-section agent permission. "hidden" hides the section from the agent
 // entirely (not in the read payload); "read-only" is visible but uneditable;
@@ -79,9 +74,13 @@ export type AgentPermission = "hidden" | "read-only" | "propose" | "direct";
 
 export const permissionToWritable = (permission: AgentPermission) =>
   permission === "propose" || permission === "direct";
-export const permissionIsReadable = (permission: AgentPermission) => permission !== "hidden";
+export const permissionIsReadable = (permission: AgentPermission) =>
+  permission !== "hidden";
 export function normalizeAgentPermission(value: unknown): AgentPermission {
-  return value === "hidden" || value === "read-only" || value === "propose" || value === "direct"
+  return value === "hidden" ||
+    value === "read-only" ||
+    value === "propose" ||
+    value === "direct"
     ? value
     : "propose";
 }
@@ -105,21 +104,18 @@ export type CreedSection = {
 };
 
 export type ProposalChangeType =
-  | "new-memory"
-  | "refines-existing"
-  | "conflicts-existing";
+  "new-memory" | "refines-existing" | "conflicts-existing";
 
 export type ProposalImpact =
-  | "future-responses"
-  | "code-generation"
-  | "project-context";
+  "future-responses" | "code-generation" | "project-context";
 
 export type ProposalConfidence = "tentative" | "repeated" | "durable";
 
 export type ProposalStatus = "pending" | "accepted" | "rejected" | "stale";
 export type ActivityStatus = ProposalStatus | "direct";
 export type IntegrationProvider = "google" | "github";
-export type IntegrationConnectionStatus = "connected" | "not-connected" | "disconnected";
+export type IntegrationConnectionStatus =
+  "connected" | "not-connected" | "disconnected";
 export type GitHubSyncStatus =
   | "not-configured"
   | "unknown"
@@ -208,7 +204,13 @@ export type HiddenInstructionContract = {
   actionOrder: string[];
   proposalContract: {
     mode: "structured-proposal";
-    requiredFields: ["target section", "proposed content", "short reason", "simple impact", "simple confidence"];
+    requiredFields: [
+      "target section",
+      "proposed content",
+      "short reason",
+      "simple impact",
+      "simple confidence",
+    ];
     instruction: string;
   };
 };
@@ -234,7 +236,11 @@ export type AgentWritePolicy =
       visible_sections: string[];
       section_permissions: SectionPermissionEntry[];
       writable_sections: GovernedSectionId[];
-      editable_sections: Array<{ id: string; name: string; kind: CreedSection["kind"] }>;
+      editable_sections: Array<{
+        id: string;
+        name: string;
+        kind: CreedSection["kind"];
+      }>;
       create_section_allowed: true;
       proposal_target_sections: string[];
       proposal_draft_kinds: string[];
@@ -258,7 +264,11 @@ export type AgentWritePolicy =
       visible_sections: string[];
       section_permissions: SectionPermissionEntry[];
       writable_sections: GovernedSectionId[];
-      editable_sections: Array<{ id: string; name: string; kind: CreedSection["kind"] }>;
+      editable_sections: Array<{
+        id: string;
+        name: string;
+        kind: CreedSection["kind"];
+      }>;
       create_section_allowed: true;
       rich_text_input_formats: Array<"html" | "markdown">;
       proposal_target_sections: string[];
@@ -347,23 +357,46 @@ export type Proposal = {
   draft: ProposalDraft;
   status: ProposalStatus;
   baseRevision?: number | null;
+  // Company proposals: who authored it. "user" = a member's own manual edit
+  // (show their profile picture); "agent" = a connected agent (show the agent
+  // glyph). Defaults to agent for personal Creeds and legacy rows.
+  authorType?: "user" | "agent";
+  authorAvatarUrl?: string;
+  authorInitials?: string;
+  // True when the signed-in viewer authored this proposal (they may edit/delete
+  // it, but not approve their own). Set server-side.
+  mine?: boolean;
 };
 
 export function normalizeLegacySectionId(sectionId: string) {
-  return sectionId === LEGACY_CONVENTIONS_SECTION_ID ? OPERATING_PRINCIPLES_SECTION_ID : sectionId;
+  return sectionId === LEGACY_CONVENTIONS_SECTION_ID
+    ? OPERATING_PRINCIPLES_SECTION_ID
+    : sectionId;
 }
 
-export function normalizeLegacyAccent(accent: AccentKey | "conventions"): AccentKey {
-  return accent === LEGACY_CONVENTIONS_SECTION_ID ? OPERATING_PRINCIPLES_SECTION_ID : accent;
+export function normalizeLegacyAccent(
+  accent: AccentKey | "conventions",
+): AccentKey {
+  return accent === LEGACY_CONVENTIONS_SECTION_ID
+    ? OPERATING_PRINCIPLES_SECTION_ID
+    : accent;
 }
 
 // Coerces every legacy draft shape into the unified rich-text draft. Older
 // agents may still submit drafts with kind "operating-principles", "rules",
 // "chips", "decisions", "current-focus" - we render their payload to markdown
 // and pass it through as a rich-text update.
-export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: string }): ProposalDraft {
-  const raw = draft && typeof draft === "object" ? (draft as Record<string, unknown>) : {};
-  const kind = raw.kind === LEGACY_CONVENTIONS_SECTION_ID ? OPERATING_PRINCIPLES_SECTION_ID : raw.kind;
+export function normalizeLegacyProposalDraft(
+  draft: ProposalDraft | { kind?: string },
+): ProposalDraft {
+  const raw =
+    draft && typeof draft === "object"
+      ? (draft as Record<string, unknown>)
+      : {};
+  const kind =
+    raw.kind === LEGACY_CONVENTIONS_SECTION_ID
+      ? OPERATING_PRINCIPLES_SECTION_ID
+      : raw.kind;
 
   const stringField = (key: string): string | undefined => {
     const value = raw[key];
@@ -374,8 +407,12 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
     return {
       kind: "new-section",
       name: stringField("name") ?? "New section",
-      accent: typeof raw.accent === "string" ? (raw.accent as AccentKey) : undefined,
-      template: typeof raw.template === "string" ? (raw.template as SectionTemplate) : undefined,
+      accent:
+        typeof raw.accent === "string" ? (raw.accent as AccentKey) : undefined,
+      template:
+        typeof raw.template === "string"
+          ? (raw.template as SectionTemplate)
+          : undefined,
       insertAfterSectionId: stringField("insertAfterSectionId"),
       contentHtml: stringField("contentHtml"),
       contentMarkdown: stringField("contentMarkdown"),
@@ -383,10 +420,25 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
   }
 
   if (kind === "rich-text") {
+    const contentHtml = stringField("contentHtml");
+    const contentMarkdown = stringField("contentMarkdown");
+    const name = stringField("name");
+    const accent =
+      typeof raw.accent === "string" ? (raw.accent as AccentKey) : undefined;
+    // A metadata-only company draft (a rename and/or recolour filed with no body
+    // change) is stored as rich-text with just a name/accent. Surface it as its
+    // dedicated kind so the reviewer sees a real before/after instead of "No
+    // textual change". Content edits (with or without a rename) stay rich-text.
+    // A combined rename+recolour can't be one dedicated kind, so prefer the
+    // rename (both fields still apply on accept via the raw draft).
+    if (!contentHtml && !contentMarkdown) {
+      if (name) return { kind: "rename-section", name: name.trim() };
+      if (accent) return { kind: "recolor-section", accent };
+    }
     return {
       kind: "rich-text",
-      contentHtml: stringField("contentHtml"),
-      contentMarkdown: stringField("contentMarkdown"),
+      contentHtml,
+      contentMarkdown,
     };
   }
 
@@ -404,7 +456,8 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
   if (kind === "recolor-section") {
     return {
       kind: "recolor-section",
-      accent: typeof raw.accent === "string" ? (raw.accent as AccentKey) : "custom",
+      accent:
+        typeof raw.accent === "string" ? (raw.accent as AccentKey) : "custom",
     };
   }
 
@@ -413,7 +466,8 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
     return {
       kind: "reorder-section",
       afterSectionId: stringField("afterSectionId"),
-      position: position === "first" || position === "last" ? position : undefined,
+      position:
+        position === "first" || position === "last" ? position : undefined,
     };
   }
 
@@ -445,23 +499,31 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
 
   if (kind === "rules") {
     const items = Array.isArray(raw.items)
-      ? raw.items.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+      ? raw.items
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
       : [];
     const append = stringField("appendItem")?.trim();
     const lines = append ? [...items, append] : items;
     return {
       kind: "rich-text",
-      contentMarkdown: lines.length ? lines.map((line) => `- ${line}`).join("\n") : "",
+      contentMarkdown: lines.length
+        ? lines.map((line) => `- ${line}`).join("\n")
+        : "",
     };
   }
 
   if (kind === "chips") {
     const chips = Array.isArray(raw.chips)
-      ? raw.chips.map((chip) => (typeof chip === "string" ? chip.trim() : "")).filter(Boolean)
+      ? raw.chips
+          .map((chip) => (typeof chip === "string" ? chip.trim() : ""))
+          .filter(Boolean)
       : [];
     return {
       kind: "rich-text",
-      contentMarkdown: chips.map((chip) => `#${chip.replace(/\s+/g, "-").toLowerCase()}`).join(" "),
+      contentMarkdown: chips
+        .map((chip) => `#${chip.replace(/\s+/g, "-").toLowerCase()}`)
+        .join(" "),
     };
   }
 
@@ -472,14 +534,23 @@ export function normalizeLegacyProposalDraft(draft: ProposalDraft | { kind?: str
 }
 
 export function normalizeLegacySection(section: CreedSection): CreedSection {
-  if (section.id !== LEGACY_CONVENTIONS_SECTION_ID && (section.accent as string) !== LEGACY_CONVENTIONS_SECTION_ID) {
+  if (
+    section.id !== LEGACY_CONVENTIONS_SECTION_ID &&
+    (section.accent as string) !== LEGACY_CONVENTIONS_SECTION_ID
+  ) {
     return section;
   }
 
   return {
     ...section,
-    id: section.id === LEGACY_CONVENTIONS_SECTION_ID ? OPERATING_PRINCIPLES_SECTION_ID : section.id,
-    name: section.id === LEGACY_CONVENTIONS_SECTION_ID ? "Operating Principles" : section.name,
+    id:
+      section.id === LEGACY_CONVENTIONS_SECTION_ID
+        ? OPERATING_PRINCIPLES_SECTION_ID
+        : section.id,
+    name:
+      section.id === LEGACY_CONVENTIONS_SECTION_ID
+        ? "Operating Principles"
+        : section.name,
     accent: normalizeLegacyAccent(section.accent),
   };
 }
@@ -489,7 +560,7 @@ export function normalizeLegacySection(section: CreedSection): CreedSection {
 // proposals through it.
 export function normalizeProposalForSection(
   proposal: Proposal,
-  _section?: CreedSection
+  _section?: CreedSection,
 ): Proposal {
   return proposal;
 }
@@ -515,13 +586,21 @@ function tagSlug(value: string) {
 
 export function legacyPayloadToRichTextContent(
   kind: string | undefined,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): string {
-  const existingContent = typeof payload.content === "string" ? payload.content : "";
+  const existingContent =
+    typeof payload.content === "string" ? payload.content : "";
 
-  if (kind === "chips" && Array.isArray(payload.chips) && payload.chips.length > 0) {
+  if (
+    kind === "chips" &&
+    Array.isArray(payload.chips) &&
+    payload.chips.length > 0
+  ) {
     const tags = (payload.chips as unknown[])
-      .filter((chip): chip is string => typeof chip === "string" && chip.trim().length > 0)
+      .filter(
+        (chip): chip is string =>
+          typeof chip === "string" && chip.trim().length > 0,
+      )
       .map((chip) => {
         const value = chip.trim();
         const slug = tagSlug(value) || value.toLowerCase();
@@ -533,9 +612,15 @@ export function legacyPayloadToRichTextContent(
     return tagParagraph + existingContent;
   }
 
-  if (kind === "rules" && Array.isArray(payload.items) && payload.items.length > 0) {
+  if (
+    kind === "rules" &&
+    Array.isArray(payload.items) &&
+    payload.items.length > 0
+  ) {
     const items = (payload.items as Array<{ id?: string; text?: string }>)
-      .filter((item) => typeof item?.text === "string" && item.text.trim().length > 0)
+      .filter(
+        (item) => typeof item?.text === "string" && item.text.trim().length > 0,
+      )
       .map((item) => `<li>${escapeHtml(item.text!.trim())}</li>`)
       .join("");
     const list = items
@@ -544,14 +629,24 @@ export function legacyPayloadToRichTextContent(
     return list + existingContent;
   }
 
-  if (kind === "decisions" && Array.isArray(payload.entries) && payload.entries.length > 0) {
-    const items = (payload.entries as Array<{ title?: string; details?: string }>)
-      .filter((entry) => typeof entry?.title === "string" && entry.title.trim().length > 0)
+  if (
+    kind === "decisions" &&
+    Array.isArray(payload.entries) &&
+    payload.entries.length > 0
+  ) {
+    const items = (
+      payload.entries as Array<{ title?: string; details?: string }>
+    )
+      .filter(
+        (entry) =>
+          typeof entry?.title === "string" && entry.title.trim().length > 0,
+      )
       .map((entry) => {
         const title = `<strong>${escapeHtml(entry.title!.trim())}</strong>`;
-        const details = entry.details && entry.details.trim().length > 0
-          ? ` - ${escapeHtml(entry.details.trim())}`
-          : "";
+        const details =
+          entry.details && entry.details.trim().length > 0
+            ? ` - ${escapeHtml(entry.details.trim())}`
+            : "";
         return `<li>${title}${details}</li>`;
       })
       .join("");
@@ -575,10 +670,11 @@ const TEMPLATE_FALLBACK_BY_KIND: Record<string, SectionTemplate> = {
 
 export function inferSectionTemplate(
   kind: string | undefined,
-  existing: SectionTemplate | undefined
+  existing: SectionTemplate | undefined,
 ): SectionTemplate {
   if (existing) return existing;
-  if (kind && TEMPLATE_FALLBACK_BY_KIND[kind]) return TEMPLATE_FALLBACK_BY_KIND[kind];
+  if (kind && TEMPLATE_FALLBACK_BY_KIND[kind])
+    return TEMPLATE_FALLBACK_BY_KIND[kind];
   return "freeform";
 }
 
@@ -601,6 +697,10 @@ export type ActivityEntry = {
   confidence: ProposalConfidence;
   beforeText?: string;
   afterText: string;
+  // Company only: the actor's avatar, so the activity row shows a person's
+  // profile picture (user) rather than a bare dot. Agents keep their glyph.
+  avatarUrl?: string;
+  avatarInitials?: string;
 };
 
 export type ConnectionItem = {
@@ -679,6 +779,62 @@ export type OnboardingState = {
   preferences: string; // how AI should treat them, always / never
 };
 
+// A member of a company Creed, as shown in the roster + attribution.
+export type CreedMemberSummary = {
+  userId: string;
+  name: string;
+  email: string;
+  avatarInitials: string;
+  // The member's real profile picture (Google/X avatar), when their auth
+  // identity carries one. Initials render as the fallback.
+  avatarUrl?: string;
+  role: "owner" | "admin" | "member";
+};
+
+// One entry in the Creed switcher.
+export type CreedSwitcherItem = {
+  id: string;
+  type: "personal" | "company";
+  name: string;
+  role: "owner" | "admin" | "member";
+  // Company Creed still in onboarding: the switcher shows "Set up" and routes
+  // to the company onboarding flow instead of the empty file.
+  needsSetup?: boolean;
+};
+
+// The company-only slice of loaded state. Present on CreedState only when the
+// active Creed is a company Creed; absent (undefined) for personal Creeds, so
+// every `state.company?.` access naturally no-ops in personal mode.
+export type CompanyContext = {
+  creedId: string;
+  creedName: string;
+  // The company's shared contact email (owner/admin set it in General). Undefined
+  // until set.
+  companyEmail?: string;
+  myRole: "owner" | "admin" | "member";
+  members: CreedMemberSummary[];
+  // The current member's effective permission per section id (owner/admin get
+  // "direct" everywhere; Hidden sections are already stripped from the payload).
+  myPermissions: Partial<Record<string, AgentPermission>>;
+  // Billing-derived: "active" | "past_due" | "frozen". Frozen = read-only.
+  accessState: "active" | "past_due" | "frozen";
+  // Whether the dedicated team-GitHub OAuth App is configured on this
+  // deployment (env). Managers use it to decide whether to offer "Connect
+  // GitHub"; false hides the affordance with an explanatory note.
+  githubOAuthConfigured?: boolean;
+  seats?: { used: number; capacity: number; included: number; extra: number };
+  // Pending invites (owner/admin only): each holds a seat until accepted or
+  // revoked. Shown in the Members list with a Revoke action.
+  invites?: Array<{ id: string; email: string; role: "admin" | "member" }>;
+  billing?: {
+    billingMode: "subscription" | "lifetime";
+    interval: "month" | "year" | null;
+    status: string;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+  };
+};
+
 export type CreedState = {
   user: {
     name: string;
@@ -687,6 +843,13 @@ export type CreedState = {
     avatarUrl?: string;
     email: string;
   };
+  // The active Creed's id + type. Defaults to the user's personal Creed.
+  creedId?: string;
+  creedType?: "personal" | "company";
+  // The switcher list (personal first, then companies). Empty/absent until loaded.
+  creeds?: CreedSwitcherItem[];
+  // Present only in company mode (see CompanyContext).
+  company?: CompanyContext;
   readUrl: string;
   readToken: string;
   writeToken: string;
@@ -891,7 +1054,8 @@ export const collaborationRules: HiddenInstructionContract = {
   sectionRules: [
     {
       title: "Identity",
-      means: "Stable picture of who the user is: role, defining traits, defaults that should follow them everywhere.",
+      means:
+        "Stable picture of who the user is: role, defining traits, defaults that should follow them everywhere.",
       belongs:
         "Concrete role/title, taste, values that anchor decisions, long-term self-description.",
       doesNotBelong:
@@ -899,7 +1063,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Beliefs",
-      means: "Values and worldview the user wants AI to know about and respect.",
+      means:
+        "Values and worldview the user wants AI to know about and respect.",
       belongs:
         "Stable beliefs, principles, or ethical commitments that change how AI should reason or recommend.",
       doesNotBelong:
@@ -907,7 +1072,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Goals",
-      means: "What the user is working toward right now and where they want to be.",
+      means:
+        "What the user is working toward right now and where they want to be.",
       belongs:
         "Live priorities, near-term outcomes, longer-horizon ambitions, with stale-by hints when useful.",
       doesNotBelong:
@@ -915,7 +1081,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Work",
-      means: "What the user does, the tools they reach for, and how they like to work.",
+      means:
+        "What the user does, the tools they reach for, and how they like to work.",
       belongs:
         "Profession, craft, tools/stack, methods, recurring collaborators or surfaces.",
       doesNotBelong:
@@ -923,7 +1090,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Preferences",
-      means: "How the user wants AI to talk to them: tone, length, depth, response style.",
+      means:
+        "How the user wants AI to talk to them: tone, length, depth, response style.",
       belongs:
         "Stable communication defaults, formatting preferences, things that consistently annoy them about AI replies.",
       doesNotBelong:
@@ -931,7 +1099,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Constraints",
-      means: "Lines AI should not cross: hard noes, sensitive topics, things that require explicit permission.",
+      means:
+        "Lines AI should not cross: hard noes, sensitive topics, things that require explicit permission.",
       belongs:
         "Stable rules: don't propose X, never assume Y, ask before Z. Privacy, safety, taste limits.",
       doesNotBelong:
@@ -939,7 +1108,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "People",
-      means: "Important relationships AI should know about and treat consistently.",
+      means:
+        "Important relationships AI should know about and treat consistently.",
       belongs:
         "Names, relationship to the user, why they matter, anything AI should remember when they come up.",
       doesNotBelong:
@@ -947,7 +1117,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Health",
-      means: "Health, dietary, accessibility, or wellbeing context AI should accommodate.",
+      means:
+        "Health, dietary, accessibility, or wellbeing context AI should accommodate.",
       belongs:
         "Conditions, sensitivities, dietary patterns, accessibility needs, paired with how AI should handle them.",
       doesNotBelong:
@@ -955,7 +1126,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Routines",
-      means: "Daily, weekly, or seasonal rhythms AI should respect when planning, scheduling, or following up.",
+      means:
+        "Daily, weekly, or seasonal rhythms AI should respect when planning, scheduling, or following up.",
       belongs:
         "Wake/sleep windows, weekly cadences, recurring rituals, anything that affects when AI should help or pause.",
       doesNotBelong:
@@ -963,7 +1135,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Context",
-      means: "High-signal personal context that doesn't fit elsewhere but is worth keeping in the profile.",
+      means:
+        "High-signal personal context that doesn't fit elsewhere but is worth keeping in the profile.",
       belongs:
         "Catch-all for durable details: location, life stage, environment, miscellaneous facts AI should know.",
       doesNotBelong:
@@ -971,7 +1144,8 @@ export const collaborationRules: HiddenInstructionContract = {
     },
     {
       title: "Custom rich-text sections",
-      means: "Profile sections the user has added themselves that don't map to the defaults.",
+      means:
+        "Profile sections the user has added themselves that don't map to the defaults.",
       belongs:
         "Durable, structured personal context the user has explicitly carved out a space for.",
       doesNotBelong:
@@ -985,10 +1159,7 @@ export const collaborationRules: HiddenInstructionContract = {
         "Ship the v2 redesign by the end of this quarter.",
         "Run a half-marathon under 1h45 before September.",
       ],
-      bad: [
-        "Be more productive.",
-        "Get better at things.",
-      ],
+      bad: ["Be more productive.", "Get better at things."],
     },
     {
       title: "Preferences",
@@ -996,10 +1167,7 @@ export const collaborationRules: HiddenInstructionContract = {
         "Lead replies with the answer, then the supporting detail.",
         "Skip 'great question' style preambles and over-praise.",
       ],
-      bad: [
-        "Be helpful and clear.",
-        "Use good formatting.",
-      ],
+      bad: ["Be helpful and clear.", "Use good formatting."],
     },
     {
       title: "People",
@@ -1007,10 +1175,7 @@ export const collaborationRules: HiddenInstructionContract = {
         "Maya: co-founder of Apex. We split product and design; default to checking with her on roadmap calls.",
         "Sam (partner): vegetarian, plans most weekend meals together.",
       ],
-      bad: [
-        "Friends and family.",
-        "Some people I work with.",
-      ],
+      bad: ["Friends and family.", "Some people I work with."],
     },
     {
       title: "New sections",
@@ -1070,7 +1235,7 @@ export function sectionToMarkdown(section: CreedSection) {
   // stripper below.
   text = text.replace(
     /<span\s+[^>]*data-tag="([^"]+)"[^>]*>[^<]*<\/span>/g,
-    "#$1"
+    "#$1",
   );
 
   // Inline formatting - convert rich-text spans to their markdown
@@ -1089,16 +1254,22 @@ export function sectionToMarkdown(section: CreedSection) {
   // get here the only `<code>` left is the inline variety.
   text = text.replace(
     /<code\b[^>]*>([\s\S]*?)<\/code>/g,
-    (_match, body: string) => `\`${stripTags(body).trim()}\``
+    (_match, body: string) => `\`${stripTags(body).trim()}\``,
   );
   text = text.replace(
     /<a\b[^>]*?href=("|')([^"']+)\1[^>]*>([\s\S]*?)<\/a>/g,
     (_match, _q: string, href: string, body: string) =>
-      `[${stripTags(body).trim()}](${href})`
+      `[${stripTags(body).trim()}](${href})`,
   );
-  text = text.replace(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)>/g, "**$1**");
+  text = text.replace(
+    /<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)>/g,
+    "**$1**",
+  );
   text = text.replace(/<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)>/g, "*$1*");
-  text = text.replace(/<(?:s|del|strike)\b[^>]*>([\s\S]*?)<\/(?:s|del|strike)>/g, "~~$1~~");
+  text = text.replace(
+    /<(?:s|del|strike)\b[^>]*>([\s\S]*?)<\/(?:s|del|strike)>/g,
+    "~~$1~~",
+  );
   text = text.replace(/<mark\b[^>]*>([\s\S]*?)<\/mark>/g, "==$1==");
   text = text.replace(/<u\b[^>]*>([\s\S]*?)<\/u>/g, "__$1__");
 
@@ -1107,22 +1278,34 @@ export function sectionToMarkdown(section: CreedSection) {
   text = text.replace(
     /<pre[^>]*>\s*<code(?:\s+class="(?:language-)?([a-zA-Z0-9_-]+)")?[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/g,
     (_match, lang: string | undefined, body: string) =>
-      `\n\`\`\`${lang ?? ""}\n${decodeEntities(body).trimEnd().replace(/^\n+/, "")}\n\`\`\`\n`
+      `\n\`\`\`${lang ?? ""}\n${decodeEntities(body).trimEnd().replace(/^\n+/, "")}\n\`\`\`\n`,
   );
 
   // Headings - shift down one level so they nest under the section's `## Name`.
-  text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/g, (_match, body: string) => `\n### ${stripTags(body).trim()}\n`);
-  text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/g, (_match, body: string) => `\n#### ${stripTags(body).trim()}\n`);
+  text = text.replace(
+    /<h2[^>]*>([\s\S]*?)<\/h2>/g,
+    (_match, body: string) => `\n### ${stripTags(body).trim()}\n`,
+  );
+  text = text.replace(
+    /<h3[^>]*>([\s\S]*?)<\/h3>/g,
+    (_match, body: string) => `\n#### ${stripTags(body).trim()}\n`,
+  );
 
   // Horizontal rule.
   text = text.replace(/<hr\s*\/?>/g, "\n\n---\n\n");
 
   // Blockquotes (rendered as callouts in the editor) → markdown `> `.
-  text = text.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g, (_match, body: string) => {
-    const inner = stripTags(body).trim();
-    if (!inner) return "";
-    return `\n${inner.split("\n").map((line) => `> ${line}`).join("\n")}\n`;
-  });
+  text = text.replace(
+    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g,
+    (_match, body: string) => {
+      const inner = stripTags(body).trim();
+      if (!inner) return "";
+      return `\n${inner
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n")}\n`;
+    },
+  );
 
   // Numbered lists.
   text = text.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/g, (_match, body: string) => {
@@ -1154,7 +1337,9 @@ export function sectionToMarkdown(section: CreedSection) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  return cleaned ? `## ${section.name}\n\n${cleaned}\n` : `## ${section.name}\n`;
+  return cleaned
+    ? `## ${section.name}\n\n${cleaned}\n`
+    : `## ${section.name}\n`;
 }
 
 // Section body as markdown, without the leading "## Name" heading that
@@ -1220,13 +1405,19 @@ function buildAgentContractPrologue(docsUrl: string): string {
     ...collaborationRules.selfImprovement.purpose.map((item) => `- ${item}`),
     "",
     "#### Before answering the user",
-    ...collaborationRules.selfImprovement.startOfWork.map((item, index) => `- Step ${index + 1}: ${item}`),
+    ...collaborationRules.selfImprovement.startOfWork.map(
+      (item, index) => `- Step ${index + 1}: ${item}`,
+    ),
     "",
     "#### After meaningful exchanges",
-    ...collaborationRules.selfImprovement.endOfWork.map((item, index) => `- Step ${index + 1}: ${item}`),
+    ...collaborationRules.selfImprovement.endOfWork.map(
+      (item, index) => `- Step ${index + 1}: ${item}`,
+    ),
     "",
     "#### Improvement tests",
-    ...collaborationRules.selfImprovement.improvementTests.map((item) => `- ${item}`),
+    ...collaborationRules.selfImprovement.improvementTests.map(
+      (item) => `- ${item}`,
+    ),
     "",
     "#### Prefer these improvements",
     ...collaborationRules.selfImprovement.prefer.map((item) => `- ${item}`),
@@ -1235,7 +1426,9 @@ function buildAgentContractPrologue(docsUrl: string): string {
     ...collaborationRules.selfImprovement.avoid.map((item) => `- ${item}`),
     "",
     "#### Repair signals",
-    ...collaborationRules.selfImprovement.repairSignals.map((item) => `- ${item}`),
+    ...collaborationRules.selfImprovement.repairSignals.map(
+      (item) => `- ${item}`,
+    ),
     "",
     `#### No-change rule\n- ${collaborationRules.selfImprovement.noChangeRule}`,
     "",
@@ -1272,23 +1465,23 @@ function buildAgentContractPrologue(docsUrl: string): string {
   return built;
 }
 
-export function buildHiddenAgentGuidanceMarkdown(
-  options?: {
-    proposalUrl?: string;
-    proposalToken?: string;
-    directEditUrl?: string;
-    directEditToken?: string;
-    docsUrl?: string;
-    visibleSections?: string[];
-    writableSections?: GovernedSectionId[];
-    editableSections?: Array<{ id: string; name: string; kind: CreedSection["kind"] }>;
-    sectionPermissions?: SectionPermissionEntry[];
-  }
-) {
+export function buildHiddenAgentGuidanceMarkdown(options?: {
+  proposalUrl?: string;
+  proposalToken?: string;
+  directEditUrl?: string;
+  directEditToken?: string;
+  docsUrl?: string;
+  visibleSections?: string[];
+  writableSections?: GovernedSectionId[];
+  editableSections?: Array<{
+    id: string;
+    name: string;
+    kind: CreedSection["kind"];
+  }>;
+  sectionPermissions?: SectionPermissionEntry[];
+}) {
   const tokenizedProposalUrl =
-    options?.proposalUrl && options?.proposalToken
-      ? options.proposalUrl
-      : null;
+    options?.proposalUrl && options?.proposalToken ? options.proposalUrl : null;
   const tokenizedDirectEditUrl =
     options?.directEditUrl && options?.directEditToken
       ? options.directEditUrl
@@ -1304,10 +1497,15 @@ export function buildHiddenAgentGuidanceMarkdown(
     .filter((entry) => entry.permission === "direct")
     .map((entry) => entry.id);
   const anyDirect = directSections.length > 0;
-  const modeIsMixed = new Set(sectionPermissions.map((entry) => entry.permission)).size > 1;
+  const modeIsMixed =
+    new Set(sectionPermissions.map((entry) => entry.permission)).size > 1;
   const docsUrl = options?.docsUrl ?? "https://creed.md/docs";
   const proposalTargetSections = [
-    ...new Set([...writableSections, ...editableSections.map((section) => section.id), "new-section"]),
+    ...new Set([
+      ...writableSections,
+      ...editableSections.map((section) => section.id),
+      "new-section",
+    ]),
   ];
   // Every kind the proposals route accepts. Listed here so the example
   // body in the contract and the policy JSON both stay in sync with the
@@ -1327,7 +1525,9 @@ export function buildHiddenAgentGuidanceMarkdown(
       return "New Section";
     }
 
-    const editableMatch = editableSections.find((section) => section.id === sectionId);
+    const editableMatch = editableSections.find(
+      (section) => section.id === sectionId,
+    );
     if (editableMatch) {
       return editableMatch.name;
     }
@@ -1408,7 +1608,7 @@ export function buildHiddenAgentGuidanceMarkdown(
       "- `creed_delete_section({ sectionId })` - remove a section.",
       "- `creed_rename_section({ sectionId, name })` - give a section a new name.",
       "- `creed_recolor_section({ sectionId, accent })` - change a section's accent.",
-      "- `creed_reorder_section({ sectionId, afterSectionId? | position? })` - move a section. Pass `position: \"first\" | \"last\"` OR `afterSectionId`, not both.",
+      '- `creed_reorder_section({ sectionId, afterSectionId? | position? })` - move a section. Pass `position: "first" | "last"` OR `afterSectionId`, not both.',
       "",
       "Read tools (use these to operate with surgical precision instead of re-reading the whole profile):",
       "- `creed_get_section({ sectionId })` - fetch ONE section in full (id, name, accent, contentHtml, lastEditedBy). Use this before update / append.",
@@ -1425,7 +1625,9 @@ export function buildHiddenAgentGuidanceMarkdown(
       `- ${collaborationRules.proposalContract.instruction}`,
       "",
       "### Action order",
-      ...collaborationRules.actionOrder.map((item, index) => `- Step ${index + 1}: ${item}`),
+      ...collaborationRules.actionOrder.map(
+        (item, index) => `- Step ${index + 1}: ${item}`,
+      ),
       `- Visible sections right now: ${visibleSections.length ? visibleSections.join(", ") : "none"}.`,
       `- Agent-writable sections right now: ${editableSections.map((section) => `${section.name} (${section.id})`).join("; ") || "none"}.`,
       `- Proposal targets right now: ${proposalTargetSections.join(", ")}.`,
@@ -1471,13 +1673,15 @@ export function buildHiddenAgentGuidanceMarkdown(
     );
 
     lines.push(
-      '  }',
+      "  }",
       "}",
       "",
       "Legacy draft shapes still accepted for back-compat (coerced server-side to rich-text):",
       '- Operating Principles: { "kind": "operating-principles", "text": "...", "replacedRuleId"?: "existing-rule-id" }',
       ...(writableSections.includes("decisions")
-        ? ['- Decisions: { "kind": "decisions", "title": "...", "details"?: "..." }']
+        ? [
+            '- Decisions: { "kind": "decisions", "title": "...", "details"?: "..." }',
+          ]
         : []),
       ...(writableSections.includes("current-focus")
         ? ['- Current Focus: { "kind": "current-focus", "content": "..." }']
@@ -1594,12 +1798,15 @@ export function buildHiddenAgentGuidanceMarkdown(
       "",
       "When to use a NEW section vs richer formatting in an existing one:",
       "- Stay in the existing section if the new content is a fact or rule that fits the section's meaning. Use richer formatting (headings, callouts, tags) to organise it.",
-      "- Create a new section only when the user has a recurring kind of content that genuinely doesn't fit any of the 10 defaults (Identity, Beliefs, Goals, Work, Preferences, Constraints, People, Health, Routines, Context). Examples: Reading, Travel, Music, Finances. Set `accent: \"custom\"` and pick a sensible `insertAfterSectionId`.",
+      '- Create a new section only when the user has a recurring kind of content that genuinely doesn\'t fit any of the 10 defaults (Identity, Beliefs, Goals, Work, Preferences, Constraints, People, Health, Routines, Context). Examples: Reading, Travel, Music, Finances. Set `accent: "custom"` and pick a sensible `insertAfterSectionId`.',
       "",
-      "- Do not hunt for other routes. Use the endpoint and token above."
+      "- Do not hunt for other routes. Use the endpoint and token above.",
     );
 
-    if (agentWritePolicy?.preferred_mode === "direct_edit" && tokenizedDirectEditUrl) {
+    if (
+      agentWritePolicy?.preferred_mode === "direct_edit" &&
+      tokenizedDirectEditUrl
+    ) {
       lines.push(
         "",
         "### Direct edit submission",
@@ -1648,7 +1855,7 @@ export function buildHiddenAgentGuidanceMarkdown(
         '- Delete a section: { "operation": "delete_section", "sectionId": "<id>", "agentName": "..." }',
         '- Rename a section: { "operation": "rename_section", "sectionId": "<id>", "name": "New name", "agentName": "..." }',
         '- Recolour a section: { "operation": "recolor_section", "sectionId": "<id>", "accent": "identity | stack | operating-principles | decisions | preferences | workflows | tools | boundaries | questions | skills | mini-skills | projects | output | rose | custom", "agentName": "..." }',
-        "Use these only when the change is genuinely about identity (name), grouping (accent), or removing a clearly stale section. Don't recolour casually - accents are how the user navigates the file."
+        "Use these only when the change is genuinely about identity (name), grouping (accent), or removing a clearly stale section. Don't recolour casually - accents are how the user navigates the file.",
       );
     }
   } else {
@@ -1658,7 +1865,9 @@ export function buildHiddenAgentGuidanceMarkdown(
       "- This payload is currently read-only. Use Creed to shape work, but do not attempt write actions without an active write policy.",
       "",
       "### Action order",
-      ...collaborationRules.actionOrder.map((item, index) => `- Step ${index + 1}: ${item}`)
+      ...collaborationRules.actionOrder.map(
+        (item, index) => `- Step ${index + 1}: ${item}`,
+      ),
     );
   }
 
@@ -1666,18 +1875,22 @@ export function buildHiddenAgentGuidanceMarkdown(
 }
 
 export function buildAgentReadPayload(
-  state: Pick<CreedState, "sections" | "writeToken" | "directEditToken" | "settings">,
+  state: Pick<
+    CreedState,
+    "sections" | "writeToken" | "directEditToken" | "settings"
+  >,
   options?: {
     proposalUrl?: string;
     directEditUrl?: string;
     docsUrl?: string;
-  }
+  },
 ) {
   // Hidden and archived sections never reach the agent. Everything else is
   // readable; the per-section permission decides editability. Writable =
   // propose | direct.
   const readableSections = state.sections.filter(
-    (section) => !section.archived && permissionIsReadable(section.agentPermission)
+    (section) =>
+      !section.archived && permissionIsReadable(section.agentPermission),
   );
   const writableSections: GovernedSectionId[] = readableSections
     .filter((section) => permissionToWritable(section.agentPermission))
@@ -1689,11 +1902,13 @@ export function buildAgentReadPayload(
       name: section.name,
       kind: section.kind,
     }));
-  const sectionPermissions: SectionPermissionEntry[] = readableSections.map((section) => ({
-    id: section.id,
-    name: section.name,
-    permission: section.agentPermission,
-  }));
+  const sectionPermissions: SectionPermissionEntry[] = readableSections.map(
+    (section) => ({
+      id: section.id,
+      name: section.name,
+      permission: section.agentPermission,
+    }),
+  );
 
   // Frame the visible Creed content as DATA explicitly, so an agent can't
   // be tricked by something a user wrote inside a section. The contract
@@ -1729,35 +1944,40 @@ export const sectionSuggestions = [
     name: "Beliefs",
     description: "Values and worldview AI should know about and respect.",
     starter:
-      "<ul class=\"creed-list creed-list-bullet\"><li>Add a belief or value AI should factor into how it reasons with you.</li></ul>",
+      '<ul class="creed-list creed-list-bullet"><li>Add a belief or value AI should factor into how it reasons with you.</li></ul>',
   },
   {
     name: "Constraints",
-    description: "Lines AI should never cross: hard noes, sensitive topics, things that need explicit permission.",
+    description:
+      "Lines AI should never cross: hard noes, sensitive topics, things that need explicit permission.",
     starter:
       "<ul class=\"creed-list creed-list-bullet\"><li>Never assume something on your behalf without checking first.</li><li>Don't surface topics you've flagged as off-limits.</li></ul>",
   },
   {
     name: "People",
-    description: "Important relationships AI should know and treat consistently.",
+    description:
+      "Important relationships AI should know and treat consistently.",
     starter:
       "<p>Name the person, your relationship, and what AI should remember when they come up.</p>",
   },
   {
     name: "Health",
-    description: "Health, dietary, accessibility, or wellbeing context AI should accommodate.",
+    description:
+      "Health, dietary, accessibility, or wellbeing context AI should accommodate.",
     starter:
       "<p>Note any conditions, sensitivities, dietary patterns, or accessibility needs, and how AI should handle them.</p>",
   },
   {
     name: "Routines",
-    description: "Daily, weekly, or seasonal rhythms AI should respect when planning or scheduling.",
+    description:
+      "Daily, weekly, or seasonal rhythms AI should respect when planning or scheduling.",
     starter:
-      "<ul class=\"creed-list creed-list-bullet\"><li>Note a habit, schedule, or ritual AI should plan around.</li></ul>",
+      '<ul class="creed-list creed-list-bullet"><li>Note a habit, schedule, or ritual AI should plan around.</li></ul>',
   },
   {
     name: "Context",
-    description: "Catch-all for durable personal context that doesn't fit elsewhere.",
+    description:
+      "Catch-all for durable personal context that doesn't fit elsewhere.",
     starter:
       "<p>Anything else AI should know about you that doesn't have its own section yet.</p>",
   },
@@ -1792,7 +2012,8 @@ export function getProposalPreviewText(draft: ProposalDraft) {
   }
 
   if (normalizedDraft.kind === "recolor-section") {
-    const label = accentLabelMap[normalizedDraft.accent] ?? normalizedDraft.accent;
+    const label =
+      accentLabelMap[normalizedDraft.accent] ?? normalizedDraft.accent;
     return `Change accent to ${label}`;
   }
 
@@ -1804,7 +2025,11 @@ export function getProposalPreviewText(draft: ProposalDraft) {
     return "Reorder section";
   }
 
-  return normalizedDraft.contentMarkdown?.trim() || normalizedDraft.contentHtml?.trim() || "";
+  return (
+    normalizedDraft.contentMarkdown?.trim() ||
+    normalizedDraft.contentHtml?.trim() ||
+    ""
+  );
 }
 
 // Activity rows render before/after through a word-level diff. For meta
@@ -1815,7 +2040,7 @@ export function getProposalPreviewText(draft: ProposalDraft) {
 // back to their existing behaviour in that case.
 export function getMetaProposalDiffText(
   draft: ProposalDraft,
-  section?: { name?: string; accent?: AccentKey } | null
+  section?: { name?: string; accent?: AccentKey } | null,
 ): { before: string; after: string } | null {
   if (draft.kind === "delete-section") {
     const name = section?.name ?? "section";
@@ -1832,7 +2057,9 @@ export function getMetaProposalDiffText(
     };
   }
   if (draft.kind === "recolor-section") {
-    const beforeLabel = section?.accent ? accentLabelMap[section.accent] ?? section.accent : "(current)";
+    const beforeLabel = section?.accent
+      ? (accentLabelMap[section.accent] ?? section.accent)
+      : "(current)";
     const afterLabel = accentLabelMap[draft.accent] ?? draft.accent;
     return {
       before: `Accent: ${beforeLabel}`,
@@ -1863,7 +2090,7 @@ export function getMetaProposalDiffText(
 export function applyReorderDraft<T extends { id: string }>(
   sections: T[],
   sectionId: string,
-  draft: { afterSectionId?: string; position?: "first" | "last" }
+  draft: { afterSectionId?: string; position?: "first" | "last" },
 ): T[] {
   const fromIndex = sections.findIndex((section) => section.id === sectionId);
   if (fromIndex === -1) return sections;
@@ -1878,7 +2105,9 @@ export function applyReorderDraft<T extends { id: string }>(
     return next;
   }
   if (draft.afterSectionId) {
-    const anchorIndex = next.findIndex((section) => section.id === draft.afterSectionId);
+    const anchorIndex = next.findIndex(
+      (section) => section.id === draft.afterSectionId,
+    );
     if (anchorIndex === -1) {
       next.splice(fromIndex, 0, moved);
       return next;
@@ -1900,7 +2129,8 @@ export function inferAgentSectionAccent(input: {
   if (input.insertAfterSectionId) {
     if (input.insertAfterSectionId === "identity") return "identity";
     if (input.insertAfterSectionId === "stack") return "stack";
-    if (input.insertAfterSectionId === "operating-principles") return "operating-principles";
+    if (input.insertAfterSectionId === "operating-principles")
+      return "operating-principles";
     if (input.insertAfterSectionId === "decisions") return "decisions";
     if (input.insertAfterSectionId === "output") return "output";
     if (input.insertAfterSectionId === "preferences") return "preferences";
@@ -1914,15 +2144,27 @@ export function inferAgentSectionAccent(input: {
     return "identity";
   }
 
-  if (/\b(stack|tech stack|tools|frameworks|languages|platforms|spaces|apps|accounts|environment)\b/.test(source)) {
+  if (
+    /\b(stack|tech stack|tools|frameworks|languages|platforms|spaces|apps|accounts|environment)\b/.test(
+      source,
+    )
+  ) {
     return "tools";
   }
 
-  if (/\b(convention|principle|operating principle|rule|guideline|standard|review standard)\b/.test(source)) {
+  if (
+    /\b(convention|principle|operating principle|rule|guideline|standard|review standard)\b/.test(
+      source,
+    )
+  ) {
     return "operating-principles";
   }
 
-  if (/\b(preference|tone|communication|uncertainty|style|response)\b/.test(source)) {
+  if (
+    /\b(preference|tone|communication|uncertainty|style|response)\b/.test(
+      source,
+    )
+  ) {
     return "preferences";
   }
 
@@ -1934,15 +2176,23 @@ export function inferAgentSectionAccent(input: {
     return "decisions";
   }
 
-  if (/\b(boundary|privacy|secret|avoid|risk|never|constraint)\b/.test(source)) {
+  if (
+    /\b(boundary|privacy|secret|avoid|risk|never|constraint)\b/.test(source)
+  ) {
     return "boundaries";
   }
 
-  if (/\b(open question|question|unresolved|undecided|unknown)\b/.test(source)) {
+  if (
+    /\b(open question|question|unresolved|undecided|unknown)\b/.test(source)
+  ) {
     return "questions";
   }
 
-  if (/\b(skill|playbook|pattern|reference|research notes|notes|knowledge)\b/.test(source)) {
+  if (
+    /\b(skill|playbook|pattern|reference|research notes|notes|knowledge)\b/.test(
+      source,
+    )
+  ) {
     return "skills";
   }
 
@@ -2050,7 +2300,7 @@ export const initialCreedState: CreedState = {
       lastEditedType: "user",
       lastEditedLabel: "just now",
       content:
-        "<ul class=\"creed-list creed-list-bullet\"><li>Lead with the answer, then the supporting detail.</li><li>Keep replies tight unless depth genuinely helps.</li><li>Skip filler, hedging, and over-praise.</li></ul>",
+        '<ul class="creed-list creed-list-bullet"><li>Lead with the answer, then the supporting detail.</li><li>Keep replies tight unless depth genuinely helps.</li><li>Skip filler, hedging, and over-praise.</li></ul>',
     },
     {
       id: ROUTINES_SECTION_ID,
@@ -2064,7 +2314,7 @@ export const initialCreedState: CreedState = {
       lastEditedType: "user",
       lastEditedLabel: "just now",
       content:
-        "<ul class=\"creed-list creed-list-bullet\"><li>Habits and rhythms an AI should respect when planning, scheduling, or following up.</li></ul>",
+        '<ul class="creed-list creed-list-bullet"><li>Habits and rhythms an AI should respect when planning, scheduling, or following up.</li></ul>',
     },
   ],
   proposals: [],
@@ -2101,7 +2351,8 @@ export const initialCreedState: CreedState = {
       name: "ChatGPT",
       icon: "chatgpt",
       status: "not-connected",
-      description: "Add Creed as a connector so ChatGPT starts from your context.",
+      description:
+        "Add Creed as a connector so ChatGPT starts from your context.",
       connectHint:
         "In ChatGPT, open Settings > Apps & Connectors, turn on Developer mode, then Create a connector with the URL. (Plus, Pro, or Business.)",
     },
@@ -2120,7 +2371,8 @@ export const initialCreedState: CreedState = {
       icon: "codex",
       status: "not-connected",
       description: "Add Creed as a remote MCP server for agentic coding runs.",
-      connectHint: "Run the command, then codex mcp login creed to authorize in the browser.",
+      connectHint:
+        "Run the command, then codex mcp login creed to authorize in the browser.",
       command: "codex mcp add creed --url https://creed.md/mcp",
     },
     {
@@ -2128,8 +2380,10 @@ export const initialCreedState: CreedState = {
       name: "Claude Code",
       icon: "claudecode",
       status: "not-connected",
-      description: "Connect Creed so every Claude Code session starts with your context.",
-      connectHint: "Run the command, then /mcp in Claude Code to authorize in the browser.",
+      description:
+        "Connect Creed so every Claude Code session starts with your context.",
+      connectHint:
+        "Run the command, then /mcp in Claude Code to authorize in the browser.",
       command: "claude mcp add -t http creed https://creed.md/mcp",
     },
     {
@@ -2201,7 +2455,8 @@ export const initialCreedState: CreedState = {
       icon: "custom",
       status: "not-connected",
       description: "Any client that speaks MCP can connect with the URL above.",
-      connectHint: "Add a custom MCP server pointing at the URL above, then authorize Creed in the browser.",
+      connectHint:
+        "Add a custom MCP server pointing at the URL above, then authorize Creed in the browser.",
     },
   ],
   onboarding: initialOnboardingState,

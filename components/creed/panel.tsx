@@ -416,7 +416,8 @@ export function CreedPanel({
     const TAP_MAX_MS = 400;
     const down = (event: KeyboardEvent) => {
       if (event.repeat) return;
-      tapStart = event.key === "Meta" || event.key === "Control" ? Date.now() : 0;
+      tapStart =
+        event.key === "Meta" || event.key === "Control" ? Date.now() : 0;
     };
     const up = (event: KeyboardEvent) => {
       if (
@@ -543,14 +544,21 @@ export function CreedPanel({
         icon: entry.icon,
         run: () => goSettings({ scrollTo: entry.key }),
       })),
-      {
-        id: "action:add-section",
-        label: "Add section",
-        group: "Actions",
-        keywords: ["new section", "create section", "compose"],
-        icon: PlusIcon as AnimatedIconComponent,
-        run: () => onAddSection(),
-      },
+      // Section creation is owner/admin-only in company mode; hide it for members.
+      ...(state.creedType !== "company" ||
+      state.company?.myRole === "owner" ||
+      state.company?.myRole === "admin"
+        ? ([
+            {
+              id: "action:add-section",
+              label: "Add section",
+              group: "Actions",
+              keywords: ["new section", "create section", "compose"],
+              icon: PlusIcon as AnimatedIconComponent,
+              run: () => onAddSection(),
+            },
+          ] as Command[])
+        : []),
       {
         id: "action:push",
         label: "Push to GitHub",
@@ -648,6 +656,8 @@ export function CreedPanel({
     router,
     signOut,
     toggleTheme,
+    state.creedType,
+    state.company?.myRole,
   ]);
 
   const groups = useMemo(() => {
@@ -941,7 +951,9 @@ export function CreedPanel({
     const proposal = result.results.find((item) => item.kind === "proposal");
     const applied = result.results.find((item) => item.kind === "applied");
     const sectionId =
-      proposal && proposal.kind === "proposal" ? proposal.sectionId : applied?.sectionId;
+      proposal && proposal.kind === "proposal"
+        ? proposal.sectionId
+        : applied?.sectionId;
     close();
     clearAgentRun();
     // Defer to after the panel closes + the freshly filed proposal paints, then
@@ -952,11 +964,17 @@ export function CreedPanel({
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         const el = sectionId
-          ? document.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`)
+          ? document.querySelector<HTMLElement>(
+              `[data-section-id="${sectionId}"]`,
+            )
           : null;
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "start" });
-        } else if (proposal && proposal.kind === "proposal" && proposal.sectionId === "new-section") {
+        } else if (
+          proposal &&
+          proposal.kind === "proposal" &&
+          proposal.sectionId === "new-section"
+        ) {
           // A brand-new section has no live node to scroll to; open its card.
           onFileProposal(proposal.proposalId);
         } else if (sectionId) {
@@ -964,7 +982,7 @@ export function CreedPanel({
           // path the sidebar section links use, which works cross-page.
           onFileSection(sectionId);
         }
-      })
+      }),
     );
   }, [agentRun.result, close, onFileProposal, onFileSection]);
 
@@ -1102,7 +1120,10 @@ export function CreedPanel({
       <DialogPortal>
         {/* Manual overlay: a non-modal Radix dialog doesn't render its own, so
             we dim + blur the background ourselves to match the other popups. */}
-        <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0" data-state={open ? "open" : "closed"} />
+        <div
+          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          data-state={open ? "open" : "closed"}
+        />
         <DialogPrimitive.Content
           aria-describedby={undefined}
           onCloseAutoFocus={(event) => {
@@ -1123,7 +1144,8 @@ export function CreedPanel({
             // a click on a mention row reads as "outside" and would dismiss the
             // whole panel. Keep it open when the interaction is inside the popup.
             const target = event.target as HTMLElement | null;
-            if (target?.closest("[data-creed-mention-popup]")) event.preventDefault();
+            if (target?.closest("[data-creed-mention-popup]"))
+              event.preventDefault();
           }}
           className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--creed-surface)] p-0 text-popover-foreground ring-1 ring-foreground/8 shadow-[0_12px_30px_rgba(28,28,26,0.08)] outline-none duration-[160ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >

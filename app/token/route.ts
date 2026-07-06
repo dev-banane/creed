@@ -163,6 +163,7 @@ export async function POST(request: Request) {
       clientId,
       userId: redeemed.userId,
       scope: redeemed.scope,
+      creedGrants: redeemed.creedGrants,
     });
     return tokenResponse(tokens);
   }

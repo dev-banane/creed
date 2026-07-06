@@ -9,7 +9,7 @@ export async function PATCH(request: Request) {
   const name = body.name?.trim();
 
   if (!name || name.length > 200) {
-    return NextResponse.json({ error: "Invalid display name" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid name" }, { status: 400 });
   }
 
   const { data, error } = await auth.supabase.auth.updateUser({

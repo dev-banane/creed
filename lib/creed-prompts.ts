@@ -34,3 +34,24 @@ export function buildComposePrompt(sections: CreedSection[]): string {
     draft,
   ].join("\n");
 }
+
+// The company onboarding "copy prompt". Same shape as buildComposePrompt but
+// framed for a shared company Creed: the file the whole team and their agents
+// read before acting. The owner pastes it into any assistant, which returns a
+// polished markdown company Creed they paste back in.
+export function buildCompanyComposePrompt(sections: CreedSection[], companyName: string): string {
+  const name = companyName.trim() || "our company";
+  const headings = sections.map((section) => `## ${section.name}`).join("\n");
+  const draft = sections.map((section) => sectionToMarkdown(section)).join("\n");
+  return [
+    `I'm setting up a shared company Creed for ${name} - one context file our whole team and every AI agent we connect reads before it acts, so everyone stays aligned. Below is a rough starter draft built from a few onboarding questions. Using this draft plus what you know about the company, write our full company Creed: sharp, durable, concrete, no filler or hedging. Write about the company and team, not about one person.`,
+    "",
+    "Output ONLY the finished Creed as markdown inside a single fenced code block - nothing before or after it. Use exactly these headings, in this order, and do not add or remove sections:",
+    "",
+    headings,
+    "",
+    "Put the rewritten body under each heading. Here is the starter draft to build from:",
+    "",
+    draft,
+  ].join("\n");
+}

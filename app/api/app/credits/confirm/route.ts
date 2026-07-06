@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCreditsState } from "@/lib/ai/credits";
+import { getCreditsState, getCompanyCreditsState } from "@/lib/ai/credits";
 import { creditBalanceFromPaymentIntent, getStripeClient } from "@/lib/stripe";
 import { requireApiAuth } from "@/lib/api-auth";
+import { resolveOwnedCompanyCreedId } from "@/lib/creed-context";
 
 // Verify a just-confirmed PaymentIntent and credit the balance immediately,
 // without waiting on the webhook. The PaymentIntent is re-fetched from Stripe
@@ -33,7 +34,13 @@ export async function POST(request: Request) {
     }
 
     await creditBalanceFromPaymentIntent(paymentIntent);
-    const credits = await getCreditsState(auth.supabase, auth.user.id);
+    // Return the balance for whichever pool was credited: an owner-of-active-
+    // company sees the company pool, everyone else their personal balance. The
+    // PaymentIntent's own creedId metadata is what actually routed the credit.
+    const companyId = await resolveOwnedCompanyCreedId(auth.supabase, auth.user);
+    const credits = companyId
+      ? await getCompanyCreditsState(companyId)
+      : await getCreditsState(auth.supabase, auth.user.id);
     return NextResponse.json({ credits });
   } catch (error) {
     return NextResponse.json(

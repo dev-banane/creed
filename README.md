@@ -71,7 +71,9 @@ Every section is agent-writable. Every change goes through the review (or direct
 
 ## Status
 
-Creed is in active development. Paid plans include a monthly AI allowance for first-party features like quality analysis, billed as prepaid credits, with an optional bring-your-own-OpenRouter-key mode.
+Creed is in active development. Personal Creed is the core one-user product. Creed Company extends the same file model into a shared workspace with roles, per-section permissions, attribution, invitations, pooled AI credits, and seat billing.
+
+Paid hosted plans include a monthly AI allowance for first-party features like quality analysis, billed as prepaid credits, with an optional bring-your-own-OpenRouter-key mode. Self-hosted development can run the app locally with your own Supabase, Stripe, and OpenRouter configuration.
 
 ---
 
@@ -82,6 +84,7 @@ You'll need:
 - **Node.js 20+**
 - **a Supabase project** (free tier is fine)
 - **an OpenRouter API key** (only needed for the AI-powered features — onboarding synthesis, quality analysis, refinement)
+- **a Stripe account** (only needed for hosted-style paid plans, Company seats, and webhooks)
 
 ### 1. Clone and install
 
@@ -178,6 +181,7 @@ MCP uses OAuth 2.1: Creed is its own authorization server (`/authorize`, `/token
 - **Framer Motion** for the calmer-than-normal interactions
 - **Supabase** for auth, Postgres, RLS, realtime
 - **OpenRouter** for first-party AI (managed credits or BYOK)
+- **Stripe** for hosted Personal and Company billing
 
 A complete tour of the public stack lives at [creed.md/stack](https://creed.md/stack).
 
@@ -203,6 +207,7 @@ components/
 lib/
 ├── creed-data.ts       types, section IDs, agent contract
 ├── creed-backend.ts    Supabase reads/writes
+├── company-*.ts        Company roles, seats, billing, invites, writes
 ├── ai/                 OpenRouter, model catalog, quality
 ├── onboarding/         the synthesizer pipeline
 └── supabase/           browser + server clients

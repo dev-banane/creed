@@ -465,17 +465,11 @@ export function SectionQualityPopover({
 export function OverallQualityPopover({
   report,
   loading,
-  notice,
-  onRefresh,
-  canRefresh,
   children,
   align = "end",
 }: {
   report: CreedQualityReport | null;
   loading?: boolean;
-  notice?: string | null;
-  onRefresh?: () => void;
-  canRefresh?: boolean;
   children: React.ReactNode;
   align?: "start" | "center" | "end";
 }) {
@@ -528,25 +522,10 @@ export function OverallQualityPopover({
             loading={loading}
           />
         ) : (
-          <div className="space-y-2.5 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-            <div className="text-[12px] font-medium text-[var(--creed-text-secondary)]">
-              Quality
-            </div>
-            <p>
-              {loading
-                ? "Analyzing your Creed for agent context…"
-                : notice || "Run an analysis to score this Creed."}
-            </p>
-            {!loading && canRefresh && onRefresh ? (
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-2.5 text-[12px] font-medium text-[var(--creed-text-primary)] transition-colors hover:bg-[var(--creed-surface-raised)]"
-              >
-                <RefreshCwIcon className="h-3 w-3" size={12} />
-                Run analysis
-              </button>
-            ) : null}
+          <div className="text-[15px] font-medium leading-none text-[var(--creed-text-secondary)] md:text-[16px]">
+            {loading
+              ? "Analyzing your Creed for agent context…"
+              : "No analysis yet."}
           </div>
         )}
       </PopoverContent>

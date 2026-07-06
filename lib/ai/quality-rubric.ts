@@ -91,16 +91,38 @@ const scoringRules = [
   "Custom sections set their own purpose; judge them on it. They can never be 'off-topic'.",
 ];
 
-export function buildQualityPrompt(sections: CreedSection[], targetSectionIds: string[]) {
+export type QualityScope = "personal" | "company";
+
+export function qualitySubject(scope: QualityScope) {
+  return scope === "company"
+    ? {
+        noun: "shared company context file",
+        owner: "company team",
+        purpose:
+          "lets a fresh AI understand the company, its people, work, clients, tools, operating rules, and collaboration defaults",
+      }
+    : {
+        noun: "personal context profile",
+        owner: "owner",
+        purpose: "lets a fresh AI know its owner",
+      };
+}
+
+export function buildQualityPrompt(
+  sections: CreedSection[],
+  targetSectionIds: string[],
+  scope: QualityScope = "personal",
+) {
   const targetSet = new Set(targetSectionIds);
   const targets = sections.filter((section) => targetSet.has(section.id));
   const bandKeys = QUALITY_SCORE_BANDS.map((band) => band.key).join(", ");
+  const subject = qualitySubject(scope);
 
   return [
     `Rubric version: ${CREED_QUALITY_RUBRIC_VERSION}`,
     "You are a strict evaluator of creed.md files.",
-    "creed.md is a personal context profile that every AI reads before talking to its owner.",
-    "Your job is to judge how well this profile lets a fresh AI know its owner. Be demanding and consistent: the same content must always earn the same score.",
+    `creed.md is a ${subject.noun} that every AI reads before talking to its ${subject.owner}.`,
+    `Your job is to judge how well this file ${subject.purpose}. Be demanding and consistent: the same content must always earn the same score.`,
     "",
     "The five best practices (this is the whole basis - judge every section on these, and nothing else):",
     ...bestPractices.map((item) => `- ${item}`),

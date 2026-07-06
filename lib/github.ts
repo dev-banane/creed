@@ -75,6 +75,96 @@ export function isGitHubTokenRefreshConfigured() {
   return Boolean(getGitHubOAuthClientId() && getGitHubOAuthClientSecret());
 }
 
+export type GitHubOAuthCredentials = { clientId: string; clientSecret: string };
+
+// A single shared "Creed" GitHub OAuth App backs BOTH the personal and the team
+// version-control connections. GitHub is no longer a sign-in provider, so these
+// credentials (GITHUB_OAUTH_CLIENT_ID/SECRET) drive our own authorize ->
+// callback -> token-exchange for the integration on both sides. One app, one
+// callback (/auth/github/callback), personal-vs-company carried in the state.
+export function getGitHubOAuthAppCredentials(): GitHubOAuthCredentials {
+  return {
+    clientId: getGitHubOAuthClientId(),
+    clientSecret: getGitHubOAuthClientSecret(),
+  };
+}
+
+export function isGitHubOAuthAppConfigured() {
+  return isGitHubTokenRefreshConfigured();
+}
+
+// The short-lived httpOnly cookie holding the anti-CSRF state (mode + creedId +
+// nonce) between the authorize redirect and the OAuth callback. Shared by the
+// personal and company flows, which use the same app + callback.
+export const GITHUB_OAUTH_STATE_COOKIE = "github_oauth_state";
+
+/**
+ * The GitHub authorize URL to send an owner/admin to when connecting the team's
+ * GitHub. `state` is an opaque anti-CSRF value the caller also stores in a
+ * cookie and re-checks on the callback. Scope is `repo` (read/write repo
+ * contents) plus `read:user` to resolve the connected login for attribution.
+ */
+export function buildGitHubAuthorizeUrl(args: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  scopes?: string;
+}) {
+  const params = new URLSearchParams({
+    client_id: args.clientId,
+    redirect_uri: args.redirectUri,
+    scope: args.scopes ?? "repo read:user",
+    state: args.state,
+    allow_signup: "false",
+  });
+  return `https://github.com/login/oauth/authorize?${params.toString()}`;
+}
+
+/**
+ * Exchange an OAuth authorization code for a user access token. Used by the
+ * team GitHub callback; the personal flow gets its token from Supabase instead.
+ */
+export async function exchangeGitHubOAuthCode(args: {
+  credentials: GitHubOAuthCredentials;
+  code: string;
+  redirectUri: string;
+}) {
+  const response = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "Creed",
+    },
+    body: new URLSearchParams({
+      client_id: args.credentials.clientId,
+      client_secret: args.credentials.clientSecret,
+      code: args.code,
+      redirect_uri: args.redirectUri,
+    }),
+    cache: "no-store",
+  });
+
+  const payload = await readJson<GitHubTokenRefreshPayload>(response);
+
+  if (!response.ok || payload.error || !payload.access_token) {
+    throw new Error(
+      payload.error_description ||
+        payload.error ||
+        "Could not complete GitHub authorization."
+    );
+  }
+
+  return {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token ?? null,
+    expiresAt:
+      typeof payload.expires_in === "number"
+        ? new Date(Date.now() + payload.expires_in * 1000).toISOString()
+        : null,
+  };
+}
+
 async function githubRequest<T>(
   accessToken: string,
   path: string,
@@ -246,8 +336,13 @@ export async function pushGitHubFile(args: {
   } satisfies GitHubPushResult;
 }
 
-export async function refreshGitHubAccessToken(refreshToken: string) {
-  if (!isGitHubTokenRefreshConfigured()) {
+export async function refreshGitHubAccessToken(
+  refreshToken: string,
+  credentials?: GitHubOAuthCredentials
+) {
+  const clientId = credentials?.clientId ?? getGitHubOAuthClientId();
+  const clientSecret = credentials?.clientSecret ?? getGitHubOAuthClientSecret();
+  if (!clientId || !clientSecret) {
     throw new Error("GitHub token refresh is not configured.");
   }
 
@@ -259,8 +354,8 @@ export async function refreshGitHubAccessToken(refreshToken: string) {
       "User-Agent": "Creed",
     },
     body: new URLSearchParams({
-      client_id: getGitHubOAuthClientId(),
-      client_secret: getGitHubOAuthClientSecret(),
+      client_id: clientId,
+      client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: refreshToken,
     }),

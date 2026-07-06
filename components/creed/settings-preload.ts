@@ -54,7 +54,7 @@ export type AiUsageSummary = {
 
 export type CreditTransaction = {
   id: string;
-  type: "topup" | "debit" | "grant";
+  type: "topup" | "debit" | "grant" | "monthly-spend";
   amountUsd: number;
   balanceAfterUsd: number;
   feature: string | null;

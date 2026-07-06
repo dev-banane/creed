@@ -90,6 +90,13 @@ export function AuthScreen({
   const t = copy[mode];
   const isSignup = mode === "signup";
 
+  // Carry the post-auth destination across the login <-> signup switch so an
+  // invited visitor who taps "Create an account" keeps returning to their
+  // invite. Without this the switch links drop `next` and a new user lands at
+  // the app root, never joining the team.
+  const withNext = (href: string) =>
+    nextPath && nextPath !== "/" ? `${href}?next=${encodeURIComponent(nextPath)}` : href;
+
   const { signIn: oauthSignIn, pendingProvider } = useOAuthSignIn(configured, nextPath);
 
   const [email, setEmail] = useState("");
@@ -256,7 +263,7 @@ export function AuthScreen({
     <AuthShell
       topRight={
         <Link
-          href={t.topHref}
+          href={withNext(t.topHref)}
           className="text-[14px] font-medium text-[var(--creed-text-primary)] transition-colors hover:text-[#2563EB]"
         >
           {t.topAction}
@@ -389,7 +396,7 @@ export function AuthScreen({
           <p className="mt-7 text-center text-[14px] text-[var(--creed-text-tertiary)]">
             {t.switchPrompt}{" "}
             <Link
-              href={t.switchHref}
+              href={withNext(t.switchHref)}
               className="font-medium text-[var(--creed-text-primary)] transition-colors hover:text-[#2563EB]"
             >
               {t.switchAction}

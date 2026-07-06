@@ -19,11 +19,26 @@ export const PRESET_TOPUPS_USD = [10, 25, 50, 100] as const;
 // Included AI allowance per plan, in MARKED-UP dollars (what the user can spend).
 // At the 2x markup, $5 marked-up is ~$2.50 of real model cost. Monthly and
 // yearly both grant $5 on a monthly cadence (yearly is a monthly drip, not an
-// annual lump); lifetime is a one-time grant that never resets. Free / no plan
+// annual lump); lifetime is a one-time $20 grant that never resets. Free / no plan
 // gets nothing and relies on purchased top-ups.
 export const GRANT_MONTHLY_USD = 5;
 export const GRANT_YEARLY_USD = 5;
-export const GRANT_LIFETIME_USD = 25;
+export const GRANT_LIFETIME_USD = 20;
+
+// Company (team) plan allowance, in the same marked-up dollars. Monthly + annual
+// grant $50 on a monthly cadence (annual is a monthly drip, not a yearly lump);
+// lifetime is a one-time $200 grant that never resets. Single source of truth so
+// the grant path (lib/ai/credits) and the provisioning path (lib/company-billing)
+// can never drift apart.
+export const COMPANY_GRANT_MONTHLY_USD = 50;
+export const COMPANY_GRANT_LIFETIME_USD = 200;
+
+// UTC year-month key ("YYYY-MM") that resets the monthly allowance. Shared by the
+// personal and company grant paths so both compute the reset boundary identically
+// (a lifetime grant uses a fixed "lifetime:*" key instead and never advances).
+export function monthlyAllowancePeriodKey(now: Date = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 // The granted allowance is "running low" once 80% of it is spent (<= 20% left).
 // Drives the soft top-up nudge; there is never a hard wall while any granted or

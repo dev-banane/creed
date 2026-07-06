@@ -8,6 +8,12 @@ import {
   syncSubscriptionFromStripe,
   upsertEntitlementFromSession,
 } from "@/lib/stripe";
+import {
+  provisionCompanyFromSession,
+  syncCompanySubscriptionFromStripe,
+  revokeCompanyForRefund,
+  applyLifetimeSeatPurchase,
+} from "@/lib/company-billing";
 import { log } from "@/lib/observability";
 
 // Stripe webhook receiver.
@@ -65,6 +71,36 @@ export async function POST(request: Request) {
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
+
+      // A one-time lifetime seat purchase adds capacity to an existing company.
+      // Idempotent on the session id, so retries no-op.
+      if (session.metadata?.kind === "company_seats") {
+        const applied = await applyLifetimeSeatPurchase(session);
+        log.info("stripe_webhook_company_seats", {
+          eventId: event.id,
+          sessionId: session.id,
+          applied,
+        });
+        return NextResponse.json({ ok: true, applied });
+      }
+
+      // A company session provisions a company Creed (Creed + owner membership
+      // + billing row + initial usage grant) instead of writing the personal
+      // creed_entitlements row. Idempotent on the session id.
+      if (session.metadata?.plan === "company") {
+        const creedId = await provisionCompanyFromSession(session);
+        if (!creedId) {
+          log.warn("stripe_webhook_company_session_skipped", {
+            eventId: event.id,
+            sessionId: session.id,
+            reason: "missing_user_id_or_not_paid",
+          });
+          return NextResponse.json({ ok: true, applied: false });
+        }
+        log.info("stripe_webhook_company_provisioned", { eventId: event.id, creedId });
+        return NextResponse.json({ ok: true, applied: true });
+      }
+
       const entitlement = await upsertEntitlementFromSession(session);
       if (!entitlement) {
         log.warn("stripe_webhook_session_skipped", {
@@ -93,14 +129,19 @@ export async function POST(request: Request) {
       // renewals, cancellations, past_due, and final deletion. Lifetime
       // owners are ignored inside the sync (ownership is terminal).
       const subscription = event.data.object as Stripe.Subscription;
-      const applied = await syncSubscriptionFromStripe(subscription);
+      // Try personal then company; a subscription id matches exactly one.
+      const personalApplied = await syncSubscriptionFromStripe(subscription);
+      const companyApplied = personalApplied
+        ? false
+        : await syncCompanySubscriptionFromStripe(subscription);
       log.info("stripe_webhook_subscription_synced", {
         eventId: event.id,
         type: event.type,
         subscriptionId: subscription.id,
-        applied,
+        applied: personalApplied || companyApplied,
+        scope: companyApplied ? "company" : "personal",
       });
-      return NextResponse.json({ ok: true, applied });
+      return NextResponse.json({ ok: true, applied: personalApplied || companyApplied });
     }
 
     if (event.type === "charge.refunded") {
@@ -108,13 +149,16 @@ export async function POST(request: Request) {
       // future billing, and the live MCP/OAuth session. Partial refunds and
       // charges that map to no entitlement are no-ops inside the helper.
       const charge = event.data.object as Stripe.Charge;
-      const revoked = await revokeEntitlementForRefund(charge);
+      // Try personal then company; a charge maps to exactly one.
+      const personalRevoked = await revokeEntitlementForRefund(charge);
+      const companyRevoked = personalRevoked ? false : await revokeCompanyForRefund(charge);
       log.info("stripe_webhook_refund_processed", {
         eventId: event.id,
         chargeId: charge.id,
-        revoked,
+        revoked: personalRevoked || companyRevoked,
+        scope: companyRevoked ? "company" : "personal",
       });
-      return NextResponse.json({ ok: true, applied: revoked });
+      return NextResponse.json({ ok: true, applied: personalRevoked || companyRevoked });
     }
 
     if (event.type === "payment_intent.succeeded") {

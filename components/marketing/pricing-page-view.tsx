@@ -30,33 +30,45 @@ const SHARED_FEATURES: Feature[] = [
   { label: "Full Creed editor with rich components", included: true },
   { label: "All MCP connections and integrations", included: true },
   { label: "Quality scoring and inline diff review", included: true },
-  { label: "Use credits or bring your own key", included: true },
 ];
 
 const FREE_EXTRAS: Feature[] = [
-  { label: "Managed backend, auth and storage", included: false },
+  { label: "$0/month of usage included", included: true },
   { label: "Cross-device sync and backups", included: false },
+  { label: "Managed backend, auth and storage", included: false },
 ];
 
-const PRO_EXTRAS: Feature[] = [
-  { label: "Managed backend, auth and storage", included: true },
-  { label: "Cross-device sync and backups", included: true },
-];
+function personalFeatures(cycle: BillingCycle): Feature[] {
+  const usage =
+    cycle === "lifetime"
+      ? "$20 of usage credit included, one-time"
+      : "$5/month of usage included";
+  return [
+    ...SHARED_FEATURES,
+    { label: usage, included: true },
+    { label: "Cross-device sync and backups", included: true },
+    { label: "Managed backend, auth and storage", included: true },
+  ];
+}
 
 // The Company card collapses all of Personal into a single ticked line, then
-// lists the company-workspace exclusives as gold stars.
-const COMPANY_FEATURES: Feature[] = [
-  { label: "Everything in Personal", included: true },
-  { label: "Shared Company Creed", included: true, star: true },
-  { label: "Per-employee Work Creeds", included: true, star: true },
-  { label: "Admin controls for members", included: true, star: true },
-  {
-    label: "Pooled company credits for AI features",
-    included: true,
-    star: true,
-  },
-  { label: "Priority support and updates", included: true, star: true },
-];
+// lists the company-workspace exclusives as gold stars. The included usage line
+// is cycle-aware: monthly/yearly get the $50/month allowance, lifetime gets the
+// one-time credit - phrased as "included" so it never reads as an extra charge.
+function companyFeatures(cycle: BillingCycle): Feature[] {
+  const usage: Feature =
+    cycle === "lifetime"
+      ? { label: "$200 of usage credit included, one-time", included: true, star: true }
+      : { label: "$50/month of usage included", included: true, star: true };
+  return [
+    { label: "Everything in Personal", included: true },
+    { label: "Shared Company Creed", included: true, star: true },
+    { label: "See activity across every member", included: true, star: true },
+    usage,
+    { label: "Admin controls for members", included: true, star: true },
+    { label: "Priority support and updates", included: true, star: true },
+  ];
+}
 
 // Per-cycle price + copy for the Personal and Company cards. Company is
 // display-only (Coming Soon); its prices are placeholders until the tier ships.
@@ -82,19 +94,19 @@ const PERSONAL_PRICING: Record<BillingCycle, CardPricing> = {
 
 const COMPANY_PRICING: Record<BillingCycle, CardPricing> = {
   monthly: {
-    price: "$199",
+    price: "$129",
     cadence: "/mo",
-    tagline: "Team access, billed monthly.",
+    tagline: "10 seats, then $12/mo each.",
   },
   yearly: {
-    price: "$1,999",
+    price: "$999",
     cadence: "/yr",
-    tagline: "Team access, billed yearly.",
+    tagline: "10 seats, then $99/yr each.",
   },
   lifetime: {
-    price: "$2,999",
+    price: "$1,999",
     cadence: "one-time",
-    tagline: "Team access, hosted and yours forever.",
+    tagline: "10 lifetime seats, then $199 each.",
   },
 };
 
@@ -117,6 +129,7 @@ export function PricingPageView() {
   const githubHref = GITHUB_URL ?? "https://github.com";
   const personal = PERSONAL_PRICING[cycle];
   const company = COMPANY_PRICING[cycle];
+  const billing = useBillingSummary();
 
   return (
     <div className="min-h-screen bg-[var(--creed-background)] text-[var(--creed-text-primary)]">
@@ -163,8 +176,11 @@ export function PricingPageView() {
               price={personal.price}
               cadence={personal.cadence}
               tagline={personal.tagline}
-              features={[...SHARED_FEATURES, ...PRO_EXTRAS]}
+              features={personalFeatures(cycle)}
               cta={{ kind: "plan", plan: "personal", cycle }}
+              owned={Boolean(billing.personal?.paid)}
+              ownedTone="blue"
+              billing={billing}
             />
             <PricingCard
               name="Company"
@@ -172,14 +188,17 @@ export function PricingPageView() {
               price={company.price}
               cadence={company.cadence}
               tagline={company.tagline}
-              features={COMPANY_FEATURES}
-              cta={{ kind: "coming-soon", label: "Coming Soon" }}
+              features={companyFeatures(cycle)}
+              cta={{ kind: "plan", plan: "company", cycle }}
+              owned={Boolean(billing.companyOwner?.paid)}
+              ownedTone="amber"
+              billing={billing}
             />
           </div>
 
           <p className="mt-7 text-center text-[13px] leading-6 text-[var(--creed-text-tertiary)]">
-            All plans let you use Creed credits or bring your own OpenRouter API
-            key for model spend.
+            Hosted plans include usage credits, with BYOK available when you
+            want model spend on your own key.
           </p>
         </section>
       </main>
@@ -253,6 +272,9 @@ function PricingCard({
   tagline,
   features,
   cta,
+  owned = false,
+  ownedTone = "blue",
+  billing,
 }: {
   name: string;
   nameClassName: string;
@@ -261,9 +283,13 @@ function PricingCard({
   tagline: string;
   features: Feature[];
   cta: PricingCardCta;
+  owned?: boolean;
+  ownedTone?: "blue" | "amber";
+  billing?: BillingSummary;
 }) {
   return (
-    <div className="flex flex-col rounded-[20px] bg-[var(--creed-surface)] p-6 md:p-7">
+    <div className="relative flex flex-col overflow-hidden rounded-[20px] bg-[var(--creed-surface)] p-6 md:p-7">
+      {owned ? <OwnedCorner tone={ownedTone} /> : null}
       <div>
         <div
           className={cn(
@@ -324,9 +350,30 @@ function PricingCard({
         ) : cta.kind === "coming-soon" ? (
           <ComingSoonCta label={cta.label} />
         ) : (
-          <PlanCta plan={cta.plan} cycle={cta.cycle} />
+          <PlanCta plan={cta.plan} cycle={cta.cycle} billing={billing} />
         )}
       </div>
+    </div>
+  );
+}
+
+function OwnedCorner({ tone }: { tone: "blue" | "amber" }) {
+  const colorClassName =
+    tone === "amber"
+      ? "bg-[#F59E0B] dark:bg-[#F5A623]"
+      : "bg-[#2563EB]";
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute right-0 top-0 h-[64px] w-[78px] rounded-tr-[20px]",
+        colorClassName,
+      )}
+      style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}
+    >
+      <Check
+        className="absolute right-[13px] top-[12px] h-6 w-6 text-white"
+        strokeWidth={3.2}
+      />
     </div>
   );
 }
@@ -421,37 +468,128 @@ function ComingSoonCta({ label }: { label: string }) {
   );
 }
 
+function useBillingPortal() {
+  const [opening, setOpening] = useState(false);
+
+  async function openPortal(opts: { scope: "personal" } | { scope: "company"; creedId: string }) {
+    if (opening) return;
+    setOpening(true);
+    try {
+      const res =
+        opts.scope === "company"
+          ? await fetch("/api/app/company/portal", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ creedId: opts.creedId }),
+            })
+          : await fetch("/api/stripe/portal", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Couldn't open billing");
+      }
+      window.location.href = data.url;
+    } catch {
+      setOpening(false);
+    }
+  }
+
+  return { openPortal, opening };
+}
+
 // Lightweight billing summary for the pricing CTAs. Composes the marketing
 // auth state with a single /api/stripe/status read so the cards can tell
 // owner / subscriber / unpaid / signed-out apart.
-function useBillingSummary(): {
+type PlanBillingStatus = {
+  paid: boolean;
+  billingMode: string | null;
+  interval: string | null;
+  status: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+};
+
+type CompanyOwnerBillingStatus = PlanBillingStatus & {
+  creedId: string;
+  name: string;
+};
+
+type BillingSummary = {
   authState: ReturnType<typeof useLandingAuthState>;
   access: boolean;
   billingMode: string | null;
-} {
+  personal?: PlanBillingStatus;
+  companyOwner: CompanyOwnerBillingStatus | null;
+};
+
+type CachedBillingSummary = Omit<BillingSummary, "authState">;
+
+const EMPTY_BILLING_SUMMARY: CachedBillingSummary = {
+  access: false,
+  billingMode: null,
+  companyOwner: null,
+};
+
+const BILLING_SUMMARY_CACHE_KEY = "creed:pricing-billing-summary";
+let cachedBillingSummary: CachedBillingSummary | null = null;
+
+function readCachedBillingSummary(): CachedBillingSummary | null {
+  if (cachedBillingSummary) return cachedBillingSummary;
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(BILLING_SUMMARY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedBillingSummary;
+    cachedBillingSummary = parsed;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedBillingSummary(summary: CachedBillingSummary | null) {
+  cachedBillingSummary = summary;
+  if (typeof window === "undefined") return;
+  try {
+    if (summary) {
+      window.sessionStorage.setItem(BILLING_SUMMARY_CACHE_KEY, JSON.stringify(summary));
+    } else {
+      window.sessionStorage.removeItem(BILLING_SUMMARY_CACHE_KEY);
+    }
+  } catch {
+    /* storage can be unavailable in private or restricted browser contexts */
+  }
+}
+
+function useBillingSummary(): BillingSummary {
   const authState = useLandingAuthState();
-  const [summary, setSummary] = useState<{
-    access: boolean;
-    billingMode: string | null;
-  }>({
-    access: false,
-    billingMode: null,
-  });
+  const [summary, setSummary] = useState<CachedBillingSummary>(
+    () => readCachedBillingSummary() ?? EMPTY_BILLING_SUMMARY,
+  );
 
   useEffect(() => {
     if (authState !== "signed-in") {
-      setSummary({ access: false, billingMode: null });
+      writeCachedBillingSummary(null);
+      setSummary(EMPTY_BILLING_SUMMARY);
       return;
     }
     let active = true;
     fetch("/api/stripe/status", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { paid?: boolean; billingMode?: string | null } | null) => {
+      .then((data: {
+        paid?: boolean;
+        billingMode?: string | null;
+        personal?: PlanBillingStatus;
+        companyOwner?: CompanyOwnerBillingStatus | null;
+      } | null) => {
         if (active && data) {
-          setSummary({
+          const nextSummary: CachedBillingSummary = {
             access: Boolean(data.paid),
             billingMode: data.billingMode ?? null,
-          });
+            personal: data.personal,
+            companyOwner: data.companyOwner ?? null,
+          };
+          writeCachedBillingSummary(nextSummary);
+          setSummary(nextSummary);
         }
       })
       .catch(() => {
@@ -474,26 +612,63 @@ function useBillingSummary(): {
  *   signed-in, unpaid          → "Get Started" → checkout(plan, cadence)
  *   signed-out                 → Google sign-in → /onboarding
  */
-function PlanCta({ plan, cycle }: { plan: CheckoutPlan; cycle: BillingCycle }) {
-  const { authState, access, billingMode } = useBillingSummary();
-  const { startCheckout, submitting } = useStripeCheckout();
+function planCycleFromStatus(status: PlanBillingStatus | undefined): BillingCycle | null {
+  if (!status?.paid) return null;
+  if (status.billingMode === "lifetime") return "lifetime";
+  if (status.billingMode === "subscription") {
+    return status.interval === "year" ? "yearly" : "monthly";
+  }
+  return null;
+}
 
-  // Owned outright - terminal state, no further purchase possible.
-  if (access && billingMode === "lifetime") {
+function PlanCta({
+  plan,
+  cycle,
+  billing,
+}: {
+  plan: CheckoutPlan;
+  cycle: BillingCycle;
+  billing?: BillingSummary;
+}) {
+  const fallbackBilling = useBillingSummary();
+  const summary = billing ?? fallbackBilling;
+  const { authState } = summary;
+  const { startCheckout, submitting } = useStripeCheckout();
+  const { openPortal, opening } = useBillingPortal();
+
+  const isPersonal = plan === "personal";
+  const tone: "blue" | "amber" = isPersonal ? "blue" : "amber";
+  const ownedStatus = isPersonal ? summary.personal : summary.companyOwner ?? undefined;
+  const ownedCycle = planCycleFromStatus(ownedStatus);
+
+  if (ownedCycle === "lifetime") {
+    const manage = cycle === "lifetime";
+    if (!manage) {
+      return (
+        <Link href="/file" className={ctaClass("solid", tone)}>
+          You own lifetime
+        </Link>
+      );
+    }
     return (
-      <Link
-        href="/file"
-        className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-[#16A34A] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#15803d]"
+      <button
+        type="button"
+        onClick={() =>
+          void openPortal(
+            isPersonal
+              ? { scope: "personal" }
+              : { scope: "company", creedId: summary.companyOwner!.creedId },
+          )
+        }
+        disabled={opening}
+        className={ctaClass("solid", tone)}
       >
-        <Check className="h-4 w-4" strokeWidth={2.75} />
-        Owned
-      </Link>
+        {opening ? "Opening" : "Manage"}
+      </button>
     );
   }
 
-  // Active subscriber. The lifetime card offers the upgrade; the monthly card
-  // shows their current plan and routes into the app.
-  if (access && billingMode === "subscription") {
+  if (ownedCycle === "monthly" || ownedCycle === "yearly") {
     if (cycle === "lifetime") {
       return (
         <button
@@ -502,17 +677,31 @@ function PlanCta({ plan, cycle }: { plan: CheckoutPlan; cycle: BillingCycle }) {
           disabled={submitting}
           className={ctaClass("solid")}
         >
-          {submitting ? "Starting" : "Own it for $199"}
+          {submitting ? "Starting" : isPersonal ? "Own it for $199" : "Own it for $1,999"}
         </button>
       );
     }
+    const label =
+      cycle === ownedCycle
+        ? "Manage billing"
+        : cycle === "yearly"
+          ? "Switch to yearly"
+          : "Switch to monthly";
     return (
-      <Link
-        href="/file"
-        className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-[var(--creed-border)] bg-transparent px-4 text-[14px] font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)]"
+      <button
+        type="button"
+        onClick={() =>
+          void openPortal(
+            isPersonal
+              ? { scope: "personal" }
+              : { scope: "company", creedId: summary.companyOwner!.creedId },
+          )
+        }
+        disabled={opening}
+        className={ctaClass(cycle === ownedCycle ? "outline" : "solid", tone)}
       >
-        Current plan
-      </Link>
+        {opening ? "Opening" : label}
+      </button>
     );
   }
 
@@ -525,7 +714,7 @@ function PlanCta({ plan, cycle }: { plan: CheckoutPlan; cycle: BillingCycle }) {
         label="Get Started"
         showIcon={false}
         redirectTo="/onboarding"
-        className={ctaClass("solid")}
+        className={ctaClass("solid", tone)}
       />
     );
   }
@@ -537,16 +726,25 @@ function PlanCta({ plan, cycle }: { plan: CheckoutPlan; cycle: BillingCycle }) {
       type="button"
       onClick={() => void startCheckout({ plan, cadence: cycle })}
       disabled={submitting}
-      className={ctaClass("solid")}
+      className={ctaClass("solid", tone)}
     >
       {submitting ? "Starting" : "Get Started"}
     </button>
   );
 }
 
-function ctaClass(style: "solid" | "outline") {
+function ctaClass(
+  style: "solid" | "outline",
+  tone: "blue" | "amber" = "blue",
+) {
   if (style === "solid") {
-    return "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-[#2563EB] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-70";
+    // Company CTAs are amber to match the "Company" wordmark; everything else
+    // is the blue primary.
+    const color =
+      tone === "amber"
+        ? "bg-[#F59E0B] hover:bg-[#D97706] dark:bg-[#F5A623] dark:hover:bg-[#E0951E]"
+        : "bg-[#2563EB] hover:bg-[#1D4ED8]";
+    return `inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md ${color} px-4 text-[14px] font-medium text-white transition-colors disabled:opacity-70`;
   }
   return "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-[var(--creed-border)] bg-transparent px-4 text-[14px] font-medium text-[var(--creed-text-primary)] transition-colors hover:bg-[var(--creed-surface-raised)]";
 }
