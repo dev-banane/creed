@@ -101,6 +101,8 @@ import { cn } from "@/lib/utils";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
 import { EditableProfileAvatar } from "@/components/creed/profile-avatar";
 
+const GITHUB_AUTHORIZED_APPS_URL = "https://github.com/settings/connections/applications";
+
 function looksLikeApiKey(value: string) {
   const trimmed = value.trim();
   return trimmed.length >= 20 && /^[A-Za-z0-9._-]+$/.test(trimmed);
@@ -167,6 +169,8 @@ function PersonalSettingsScreen() {
   const [deleting, setDeleting] = useState(false);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [disconnectingGitHub, setDisconnectingGitHub] = useState(false);
+  const [githubDisconnectedOverride, setGithubDisconnectedOverride] =
+    useState(false);
   const [reposLoading, setReposLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [repos, setRepos] = useState<RepoOption[]>([]);
@@ -274,8 +278,11 @@ function PersonalSettingsScreen() {
   }
 
   const githubStatus = state.settings.integrations.github.status;
-  const githubConnected = githubStatus === "connected";
-  const githubDisconnected = githubStatus === "disconnected";
+  const effectiveGitHubStatus = githubDisconnectedOverride
+    ? "disconnected"
+    : githubStatus;
+  const githubConnected = effectiveGitHubStatus === "connected";
+  const githubDisconnected = effectiveGitHubStatus === "disconnected";
   const selectedRepoFullName =
     state.settings.versionControl.repoOwner && state.settings.versionControl.repoName
       ? `${state.settings.versionControl.repoOwner}/${state.settings.versionControl.repoName}`
@@ -639,6 +646,7 @@ function PersonalSettingsScreen() {
   // identity linking): a full-page redirect to /api/app/github/authorize, which
   // bounces through GitHub and back to /settings?github=<status> (handled above).
   function handleConnectGitHub() {
+    setGithubDisconnectedOverride(false);
     setConnectingGitHub(true);
     window.location.href = "/api/app/github/authorize?mode=personal";
   }
@@ -655,11 +663,12 @@ function PersonalSettingsScreen() {
       if (!response.ok) {
         throw new Error(payload.error || "Could not disconnect GitHub");
       }
-      await refreshState();
-      toast.success("GitHub disconnected");
+      setGithubDisconnectedOverride(true);
       setRepos([]);
       setBranches([]);
       clearSettingsRepoCache();
+      void refreshState();
+      toast.success("GitHub disconnected");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not disconnect GitHub");
     } finally {
@@ -968,7 +977,7 @@ function PersonalSettingsScreen() {
               <IntegrationRow
                 title="GitHub"
                 icon={<GitHubMark className="h-7 w-7 text-[#24292F] dark:text-[var(--creed-text-primary)]" />}
-                status={githubStatus}
+                status={effectiveGitHubStatus}
                 statusLabel={
                   githubConnected
                     ? "Connected"
@@ -987,11 +996,14 @@ function PersonalSettingsScreen() {
                       onClick={() => void handleDisconnectGitHub()}
                     />
                   ) : (
-                    <ConnectButton
-                      label="GitHub"
-                      loading={connectingGitHub}
-                      onClick={() => void handleConnectGitHub()}
-                    />
+                    <div className="flex items-center gap-2">
+                      <ReauthorizeButton />
+                      <ConnectButton
+                        label="GitHub"
+                        loading={connectingGitHub}
+                        onClick={() => void handleConnectGitHub()}
+                      />
+                    </div>
                   )
                 }
               />
@@ -1644,6 +1656,24 @@ export function DisconnectButton({
           <span className="hidden md:inline">Disconnect</span>
         </>
       )}
+    </Button>
+  );
+}
+
+export function ReauthorizeButton() {
+  return (
+    <Button
+      asChild
+      variant="ghost"
+      className="rounded-md px-3 text-[13px] text-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)] max-md:hidden"
+    >
+      <a
+        href={GITHUB_AUTHORIZED_APPS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Re-authorize
+      </a>
     </Button>
   );
 }

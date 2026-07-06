@@ -43,7 +43,7 @@ import {
   type Proposal,
   type ProposalDraft,
 } from "@/lib/creed-data";
-import { normalizeRichTextInput } from "@/lib/rich-text";
+import { normalizeRichTextInput, richTextContentEquivalent } from "@/lib/rich-text";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 
@@ -486,6 +486,50 @@ export function CreedProvider({
     } catch {
       toast.error("The section could not be created.");
       await syncFromServer();
+    }
+  }
+
+  async function runCompanySectionArchive(
+    sectionId: string,
+    archived: boolean,
+    options: { sync?: boolean } = {},
+  ) {
+    const creedId = latestStateRef.current.creedId;
+    if (!creedId) return;
+    const shouldSync = options.sync ?? true;
+
+    try {
+      const response = await fetch(
+        `/api/app/sections/${encodeURIComponent(sectionId)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ creedId, archived }),
+        },
+      );
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        toast.error(
+          data.error ??
+            (archived
+              ? "Could not archive the section."
+              : "Could not restore the section."),
+        );
+        if (shouldSync) await syncFromServer();
+        return;
+      }
+
+      if (shouldSync) await syncFromServer();
+    } catch {
+      toast.error(
+        archived
+          ? "Could not archive the section."
+          : "Could not restore the section.",
+      );
+      if (shouldSync) await syncFromServer();
     }
   }
 
@@ -947,7 +991,7 @@ export function CreedProvider({
     const existing = latestStateRef.current.sections.find(
       (section) => section.id === sectionId && section.kind === "rich-text",
     );
-    if (existing && existing.content === content) {
+    if (existing && richTextContentEquivalent(existing.content, content)) {
       return;
     }
 
@@ -1203,6 +1247,7 @@ export function CreedProvider({
   // for it are dropped so nothing dangles against a hidden section; activity
   // history is preserved. Restore simply clears the flag.
   function archiveSection(sectionId: string) {
+    const isCompany = latestStateRef.current.creedType === "company";
     commitState((current) =>
       nextMutationTick({
         ...current,
@@ -1214,9 +1259,13 @@ export function CreedProvider({
         ),
       }),
     );
+    if (isCompany) {
+      void runCompanySectionArchive(sectionId, true);
+    }
   }
 
   function restoreSection(sectionId: string) {
+    const isCompany = latestStateRef.current.creedType === "company";
     commitState((current) =>
       nextMutationTick({
         ...current,
@@ -1225,12 +1274,37 @@ export function CreedProvider({
         ),
       }),
     );
+    if (isCompany) {
+      void runCompanySectionArchive(sectionId, false);
+    }
   }
 
   // Archiving the whole Creed archives every live section at once and drops in a
   // single blank placeholder, so the file resets to a clean slate while every
   // section stays recoverable from Settings -> Archived.
   function archiveCreed() {
+    if (latestStateRef.current.creedType === "company") {
+      const sectionIds = latestStateRef.current.sections
+        .filter((section) => !section.archived)
+        .map((section) => section.id);
+      commitState((current) =>
+        nextMutationTick({
+          ...current,
+          sections: current.sections.map((section) => ({
+            ...section,
+            archived: true,
+          })),
+          proposals: [],
+        }),
+      );
+      void Promise.all(
+        sectionIds.map((sectionId) =>
+          runCompanySectionArchive(sectionId, true, { sync: false }),
+        ),
+      ).then(() => syncFromServer());
+      return;
+    }
+
     commitState((current) => {
       const archived = current.sections.map((section) =>
         section.archived ? section : { ...section, archived: true },

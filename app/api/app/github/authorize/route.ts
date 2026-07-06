@@ -73,6 +73,7 @@ export async function GET(request: Request) {
     clientId: getGitHubOAuthAppCredentials().clientId,
     redirectUri: `${origin}/auth/github/callback`,
     state: nonce,
+    prompt: "consent",
   });
   return NextResponse.redirect(authorizeUrl);
 }

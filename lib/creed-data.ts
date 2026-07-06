@@ -2035,21 +2035,19 @@ export function getProposalPreviewText(draft: ProposalDraft) {
   );
 }
 
-// Activity rows render before/after through a word-level diff. For meta
-// proposals (delete / rename / recolor), the raw content vs. a short summary
-// produces a misleading "everything was deleted" diff. This helper returns
-// before/after strings tailored to the meta kind so the diff stays useful
-// and proportional. Returns null for non-meta drafts; callers should fall
-// back to their existing behaviour in that case.
+// Activity rows render before/after through a word-level diff. Rename, recolor,
+// and reorder proposals use compact labels because they change metadata. Section
+// deletion uses the real section body so the count reflects the removed content.
+// Returns null for non-meta drafts; callers should fall back to their existing
+// behaviour in that case.
 export function getMetaProposalDiffText(
   draft: ProposalDraft,
-  section?: { name?: string; accent?: AccentKey } | null,
+  section?: { name?: string; accent?: AccentKey; content?: string } | null,
 ): { before: string; after: string } | null {
   if (draft.kind === "delete-section") {
-    const name = section?.name ?? "section";
     return {
-      before: `Keep ${name}`,
-      after: `Delete ${name}`,
+      before: section?.content ?? "",
+      after: "",
     };
   }
   if (draft.kind === "rename-section") {

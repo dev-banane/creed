@@ -36,6 +36,7 @@ import {
   IntegrationRow,
   ConnectButton,
   DisconnectButton,
+  ReauthorizeButton,
 } from "@/components/creed/settings-screen";
 import { CreditsHistoryDialog } from "@/components/creed/credits-history-dialog";
 import { AddCreditsDialog } from "@/components/creed/add-credits-dialog";
@@ -273,7 +274,12 @@ export function CompanySettings() {
   // GitHub; in company mode the loader feeds settings.integrations.github from
   // the team integration row.
   const github = state.settings.integrations.github;
-  const githubConnected = github.status === "connected";
+  const [githubDisconnectedOverride, setGithubDisconnectedOverride] =
+    useState(false);
+  const effectiveGitHubStatus = githubDisconnectedOverride
+    ? "disconnected"
+    : github.status;
+  const githubConnected = effectiveGitHubStatus === "connected";
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [disconnectingGitHub, setDisconnectingGitHub] = useState(false);
   const [repos, setRepos] = useState<RepoOption[]>([]);
@@ -696,6 +702,7 @@ export function CompanySettings() {
   // a full-page redirect through GitHub; the callback stores the team token and
   // returns to /settings?teamGithub=<status>, which the effect below toasts.
   function connectGitHub() {
+    setGithubDisconnectedOverride(false);
     setConnectingGitHub(true);
     window.location.href = `/api/app/github/authorize?mode=company&creedId=${encodeURIComponent(creedId)}`;
   }
@@ -705,9 +712,10 @@ export function CompanySettings() {
       setDisconnectingGitHub(true);
       const ok = await post("/api/app/company/github", { creedId }, "DELETE");
       if (!ok) return;
+      setGithubDisconnectedOverride(true);
       setRepos([]);
       setBranches([]);
-      await refreshState();
+      void refreshState();
       toast.success("GitHub disconnected.");
     } catch (error) {
       toast.error(
@@ -1406,11 +1414,11 @@ export function CompanySettings() {
             icon={
               <GitHubMark className="h-7 w-7 text-[#24292F] dark:text-[var(--creed-text-primary)]" />
             }
-            status={github.status}
+            status={effectiveGitHubStatus}
             statusLabel={
               githubConnected
                 ? "Connected"
-                : github.status === "disconnected"
+                : effectiveGitHubStatus === "disconnected"
                   ? "Disconnected"
                   : "Not connected"
             }
@@ -1423,11 +1431,14 @@ export function CompanySettings() {
                   onClick={disconnectGitHub}
                 />
               ) : company.githubOAuthConfigured ? (
-                <ConnectButton
-                  label="GitHub"
-                  loading={connectingGitHub}
-                  onClick={connectGitHub}
-                />
+                <div className="flex items-center gap-2">
+                  <ReauthorizeButton />
+                  <ConnectButton
+                    label="GitHub"
+                    loading={connectingGitHub}
+                    onClick={connectGitHub}
+                  />
+                </div>
               ) : (
                 <span className="text-[13px] text-[var(--creed-text-tertiary)]">
                   Not available on this deployment

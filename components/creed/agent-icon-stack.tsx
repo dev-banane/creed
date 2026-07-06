@@ -10,7 +10,13 @@ export { getAgentIconKind };
 // The in-app agent's name. Rendered with the blue Creed brandmark instead of a
 // generic glyph so a Creed-authored proposal reads as "the app itself".
 const CREED_AGENT_NAME = "creed";
-const isCreedAgent = (name: string) => name.trim().toLowerCase() === CREED_AGENT_NAME;
+const isCreedAgent = (name: string) => {
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === CREED_AGENT_NAME ||
+    /^.+?'s\s+creed$/.test(normalized)
+  );
+};
 
 type AgentLike = string | Pick<McpClient, "name" | "icon"> | { agentName?: string; icon?: AgentIconKind };
 

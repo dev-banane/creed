@@ -109,6 +109,7 @@ export function buildGitHubAuthorizeUrl(args: {
   redirectUri: string;
   state: string;
   scopes?: string;
+  prompt?: string;
 }) {
   const params = new URLSearchParams({
     client_id: args.clientId,
@@ -117,6 +118,7 @@ export function buildGitHubAuthorizeUrl(args: {
     state: args.state,
     allow_signup: "false",
   });
+  if (args.prompt) params.set("prompt", args.prompt);
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 

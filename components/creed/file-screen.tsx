@@ -2279,16 +2279,23 @@ export function FileScreen() {
                           ) : null}
                           {copiedAction === "copy" ? "Copied" : "Copy"}
                         </AnimatedMenuIconItem>
-                        <DropdownMenuSeparator />
-                        <AnimatedMenuIconItem
-                          icon={ArchiveIcon}
-                          className="text-sm"
-                          onSelect={() => {
-                            window.setTimeout(() => setArchiveAllOpen(true), 0);
-                          }}
-                        >
-                          Archive
-                        </AnimatedMenuIconItem>
+                        {state.creedType !== "company" || isCompanyManager ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <AnimatedMenuIconItem
+                              icon={ArchiveIcon}
+                              className="text-sm"
+                              onSelect={() => {
+                                window.setTimeout(
+                                  () => setArchiveAllOpen(true),
+                                  0,
+                                );
+                              }}
+                            >
+                              Archive
+                            </AnimatedMenuIconItem>
+                          </>
+                        ) : null}
                         <AnimatedMenuIconItem
                           icon={DeleteIcon}
                           className="mt-1 bg-[#DC2626] text-sm text-white hover:bg-[#B91C1C] hover:text-white focus:bg-[#B91C1C] focus:text-white data-[highlighted]:bg-[#B91C1C] data-[highlighted]:text-white not-data-[variant=destructive]:focus:**:text-white"
@@ -2448,6 +2455,8 @@ export function FileScreen() {
                     state.creedType === "company" &&
                     !frozen &&
                     myPerm === "read-only";
+                  const canArchiveSection =
+                    state.creedType !== "company" || isCompanyManager;
                   return (
                     <SectionCard
                       key={section.id}
@@ -2523,10 +2532,14 @@ export function FileScreen() {
                           0,
                         )
                       }
-                      onArchive={() => {
-                        archiveSection(section.id);
-                        toast.success(`Archived "${section.name}"`);
-                      }}
+                      onArchive={
+                        canArchiveSection
+                          ? () => {
+                              archiveSection(section.id);
+                              toast.success(`Archived "${section.name}"`);
+                            }
+                          : undefined
+                      }
                       onAddSectionAfter={
                         canCreateSections
                           ? () => openComposerAndReveal(section.id)
@@ -3024,7 +3037,7 @@ function SectionCard({
   onSetAccent: (accent: AccentKey) => void;
   onCopy: () => void;
   onDelete: () => void;
-  onArchive: () => void;
+  onArchive?: () => void;
   onAddSectionAfter?: () => void;
 }) {
   const dragControls = useDragControls();
@@ -3304,14 +3317,18 @@ function SectionCard({
                   >
                     Copy
                   </AnimatedMenuIconItem>
-                  <DropdownMenuSeparator />
-                  <AnimatedMenuIconItem
-                    icon={ArchiveIcon}
-                    className="text-sm"
-                    onSelect={onArchive}
-                  >
-                    Archive
-                  </AnimatedMenuIconItem>
+                  {onArchive ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <AnimatedMenuIconItem
+                        icon={ArchiveIcon}
+                        className="text-sm"
+                        onSelect={onArchive}
+                      >
+                        Archive
+                      </AnimatedMenuIconItem>
+                    </>
+                  ) : null}
                   {/* Solid red, matching the file menu's Delete. */}
                   <AnimatedMenuIconItem
                     icon={DeleteIcon}
@@ -3664,16 +3681,25 @@ function ActivityRail({
           return false;
         }
 
-        // Hide phantom edits: a direct edit whose before/after differ only by
-        // whitespace (someone bumped the spacebar and saved). These pre-date the
-        // no-op guard; new ones are never created. A rename (before === after
-        // exactly), a real edit, and delete/reorder (distinct labels) all stay.
+        // Hide phantom edits: rows with no diff payload at all, or a direct edit
+        // whose before/after differ only by whitespace (someone clicked into a
+        // section or bumped the spacebar and saved). New ones are blocked by the
+        // server guard, but old rows can still be in local state until refresh.
         const before = entry.beforeText ?? "";
         const after = entry.afterText ?? "";
+        const hasBefore = before.trim().length > 0;
+        const hasAfter = after.trim().length > 0;
+        if (
+          (entry.status === "direct" || entry.status === "accepted") &&
+          !hasBefore &&
+          !hasAfter
+        ) {
+          return false;
+        }
         if (
           entry.status === "direct" &&
-          before &&
-          after &&
+          hasBefore &&
+          hasAfter &&
           before !== after &&
           richTextContentEquivalent(before, after)
         ) {

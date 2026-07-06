@@ -10,7 +10,7 @@ const agentAliases: Array<[AgentIconKind, string[]]> = [
   ["claudecode", ["claude code", "claude-code", "claude_code", "claudecode"]],
   ["chatgpt", ["chatgpt", "chat gpt", "chat-gpt"]],
   ["claude", ["claude"]],
-  ["codex", ["codex"]],
+  ["codex", ["codex", "creed"]],
   ["cursor", ["cursor"]],
   ["replit", ["replit"]],
   ["devin", ["devin"]],
@@ -22,8 +22,16 @@ const agentAliases: Array<[AgentIconKind, string[]]> = [
   ["v0", ["v0"]],
 ];
 
+function normalizeAgentName(value?: string | null) {
+  const normalized = value?.toLowerCase().trim() ?? "";
+  // Company attribution renders as "[member]'s [agent]". Icon detection should
+  // inspect the actual agent suffix, so "Connor's Codex" and "Connor's Creed"
+  // do not fall back to the generic custom-agent glyph.
+  return normalized.replace(/^.+?'s\s+/, "");
+}
+
 export function getAgentIconKind(value?: string | null): AgentIconKind {
-  const normalized = value?.toLowerCase() ?? "";
+  const normalized = normalizeAgentName(value);
   const match = agentAliases.find(([, aliases]) =>
     aliases.some((alias) => normalized.includes(alias))
   );

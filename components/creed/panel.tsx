@@ -133,6 +133,7 @@ const PLACEHOLDER: Record<Mode, string> = {
   agent: "Tell Creed what to change…",
 };
 const AGENT_STAGES: AgentStage[] = ["reading", "planning", "writing", "filing"];
+const AGENT_RESULT_REFRESH_DELAYS_MS = [400, 1200] as const;
 
 const SETTINGS_COMMANDS: Array<{
   key: SettingsSectionKey;
@@ -926,6 +927,9 @@ export function CreedPanel({
   // is closed when the run finishes.
   const applyAgentResult = useCallback(async () => {
     await refreshState();
+    for (const delay of AGENT_RESULT_REFRESH_DELAYS_MS) {
+      window.setTimeout(() => void refreshState(), delay);
+    }
   }, [refreshState]);
 
   const sendAgent = useCallback(

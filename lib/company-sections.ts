@@ -476,8 +476,8 @@ async function applyDraft(params: {
       sectionName: current.name,
       accent: current.accent,
       revision: current.revision,
-      before: `Keep ${current.name}`,
-      after: `Delete ${current.name}`,
+      before: current.payload.content ?? "",
+      after: "",
     };
   }
 
@@ -687,8 +687,8 @@ function describeProposal(
   }
   if (draft.kind === "delete-section") {
     return {
-      before: `Keep ${target}`,
-      after: `Delete ${target}`,
+      before: current.content,
+      after: "",
       summary: `${actorLabelText} proposed deleting ${target}`,
     };
   }
@@ -1379,6 +1379,9 @@ export async function reviewCompanyProposal(params: {
     .eq("id", proposalId)
     .eq("creed_id", creedId)
     .eq("status", "pending");
+  if (applied.noop) {
+    return { ok: true, revision: applied.revision };
+  }
   await writeActivity({
     creedId,
     sectionId: applied.sectionId,

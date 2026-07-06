@@ -435,11 +435,8 @@ export async function POST(request: Request) {
       reason: "Applied directly because approval was off.",
       impact: "future-responses",
       confidence: "durable",
-      // Use proportional before/after labels so the activity sidebar's diff
-      // renders "Keep Boundaries" → "Delete Boundaries" instead of an empty
-      // "No textual change" body.
-      beforeText: `Keep ${target.name}`,
-      afterText: `Delete ${target.name}`,
+      beforeText: target.content,
+      afterText: "",
     };
   } else if (body.operation === "rename_section") {
     agentName = body.agentName;

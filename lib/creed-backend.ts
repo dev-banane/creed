@@ -43,6 +43,7 @@ import { isGitHubOAuthAppConfigured } from "@/lib/github";
 import { readCompanyGitHubIntegration } from "@/lib/company-github";
 import { log } from "@/lib/observability";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
+import { richTextContentEquivalent } from "@/lib/rich-text";
 import type { CreedSummary } from "@/lib/creed-membership";
 import { getPersonalCreedId } from "@/lib/creed-membership";
 
@@ -971,6 +972,31 @@ function hydrateActivity(row: ActivityRow): ActivityEntry {
   };
 }
 
+function isNoopActivityEntry(entry: ActivityEntry) {
+  if (entry.status === "pending") return false;
+
+  const before = entry.beforeText ?? "";
+  const after = entry.afterText ?? "";
+  const hasBefore = before.trim().length > 0;
+  const hasAfter = after.trim().length > 0;
+
+  if (
+    (entry.status === "direct" || entry.status === "accepted") &&
+    !hasBefore &&
+    !hasAfter
+  ) {
+    return true;
+  }
+
+  return (
+    entry.status === "direct" &&
+    hasBefore &&
+    hasAfter &&
+    before !== after &&
+    richTextContentEquivalent(before, after)
+  );
+}
+
 async function ensureTokenRow(client: unknown, userId: string) {
   const db = client as SupabaseLikeClient;
   const data = await readTokenRow(db, userId);
@@ -1367,7 +1393,7 @@ async function loadCreedStateImpl(
       activity: hydrateActivityEntries(
         (activityRows as ActivityRow[] | null) ?? [],
         (sectionRows as SectionRow[] | null) ?? [],
-      ),
+      ).filter((entry) => !isNoopActivityEntry(entry)),
       settings: {
         requireApproval: tokenRow.require_approval,
         integrations: buildIntegrationSettings(resolvedUser, githubIntegration, {
@@ -1686,7 +1712,8 @@ export async function loadCompanyCreedState(
           member?.avatarInitials ?? getAvatarInitials(entry.actor),
       };
     })
-    .filter((entry) => !entry.sectionId || visibleIds.has(entry.sectionId));
+    .filter((entry) => !entry.sectionId || visibleIds.has(entry.sectionId))
+    .filter((entry) => !isNoopActivityEntry(entry));
 
   const accessState = deriveCompanyAccessState(billingRow?.status);
   const seatsCapacity =
@@ -1974,29 +2001,31 @@ export async function persistCreedState(
 
   const proposalIds = state.proposals.map((proposal) => proposal.id);
   const knownProposalIds = new Set(proposalIds);
-  const activityRows = state.activity.map((entry) => ({
-    id: entry.id,
-    creed_id: creedId,
-    user_id: userId,
-    proposal_id:
-      entry.proposalId && knownProposalIds.has(entry.proposalId)
-        ? entry.proposalId
-        : null,
-    section_id: entry.sectionId,
-    section_name: entry.sectionName,
-    accent: entry.accent,
-    actor: entry.actor,
-    actor_type: entry.actorType,
-    summary: entry.summary,
-    status: entry.status,
-    change_type: entry.changeType,
-    reason: entry.reason,
-    impact: entry.impact,
-    confidence: entry.confidence,
-    before_text: entry.beforeText ?? null,
-    after_text: entry.afterText,
-    created_at: entry.createdAt ?? now,
-  }));
+  const activityRows = state.activity
+    .filter((entry) => !isNoopActivityEntry(entry))
+    .map((entry) => ({
+      id: entry.id,
+      creed_id: creedId,
+      user_id: userId,
+      proposal_id:
+        entry.proposalId && knownProposalIds.has(entry.proposalId)
+          ? entry.proposalId
+          : null,
+      section_id: entry.sectionId,
+      section_name: entry.sectionName,
+      accent: entry.accent,
+      actor: entry.actor,
+      actor_type: entry.actorType,
+      summary: entry.summary,
+      status: entry.status,
+      change_type: entry.changeType,
+      reason: entry.reason,
+      impact: entry.impact,
+      confidence: entry.confidence,
+      before_text: entry.beforeText ?? null,
+      after_text: entry.afterText,
+      created_at: entry.createdAt ?? now,
+    }));
 
   const sectionIds = state.sections.map((section) => section.id);
 

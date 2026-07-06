@@ -155,9 +155,9 @@ export function CreedShell({
   const agentTile = agentBusy
     ? { bg: "var(--creed-accent)", label: "Creed is working" }
     : agentRun.status === "result"
-      ? { bg: "var(--creed-success)", label: "Creed finished" }
+      ? { bg: "#16A34A", label: "Creed finished" }
       : agentRun.status === "error"
-        ? { bg: "var(--creed-danger)", label: "Creed hit an error" }
+        ? { bg: "#DC2626", label: "Creed hit an error" }
         : null;
   // Desktop sidebar collapse (S key). Collapsed drops every lg: sidebar style
   // so desktop renders the same 48px icon rail as mobile. Persisted so the
@@ -410,11 +410,11 @@ export function CreedShell({
                     className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
                   />
                   {/* Agent background status: a small dot on the icon, coloured
-                      like the tile below (pulses only while working). Hidden on
+                      like the tile below. Hidden on
                       the expanded row, where the tile takes over. */}
                   {agentTile ? (
                     <span
-                      className={cn("absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full", agentBusy && "animate-pulse", !collapsed && "lg:hidden")}
+                      className={cn("absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full", !collapsed && "lg:hidden")}
                       style={{ backgroundColor: agentTile.bg }}
                     />
                   ) : null}
