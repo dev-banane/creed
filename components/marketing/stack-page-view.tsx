@@ -8,8 +8,6 @@ import {
 import { AnimatedPageTitle } from "@/components/marketing/animated-page-title";
 import { MarketingFooter, MarketingHeroBanner } from "@/components/marketing/site-chrome";
 
-const lastUpdated = "8 April 2026";
-
 const stackRows = [
   {
     name: "Supabase",
@@ -64,14 +62,6 @@ export function StackPageView() {
           <p className="mt-5 max-w-2xl text-[18px] leading-8 text-[var(--creed-text-secondary)]">
             The technology Creed uses to run, store, and process your data.
           </p>
-        </div>
-
-        <div className="border-b border-[var(--creed-border)] pb-8 pt-8 text-[14px] text-[var(--creed-text-secondary)]">
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-            <span>
-              <span className="text-[var(--creed-text-tertiary)]">Last updated</span> {lastUpdated}
-            </span>
-          </div>
         </div>
 
         <section className="py-8 md:py-10">

@@ -13,6 +13,7 @@ const PATH = "/context";
 const TITLE = "What is a context file?";
 const DESCRIPTION =
   "A personal context file is one structured profile that every AI reads before it answers you. Learn what goes in it, how agents keep it current, and how it differs from a chatbot's memory.";
+const DATE_MODIFIED = "2026-07-07";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -31,7 +32,12 @@ export default function ContextFilePage() {
     <>
       <JsonLd
         data={graph(
-          webPageSchema({ path: PATH, name: TITLE, description: DESCRIPTION }),
+          webPageSchema({
+            path: PATH,
+            name: TITLE,
+            description: DESCRIPTION,
+            dateModified: DATE_MODIFIED,
+          }),
           breadcrumbSchema(PATH, [
             { name: "Creed", path: "/home" },
             { name: "Context file", path: PATH },

@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
 import { RoadmapPageView } from "@/components/marketing/roadmap-page-view";
 import { fetchRoadmap } from "@/lib/marketing/fetch-roadmap";
+import { JsonLd } from "@/components/marketing/json-ld";
+import { breadcrumbSchema, graph, webPageSchema } from "@/lib/seo/structured-data";
+
+const PATH = "/roadmap";
+const TITLE = "Roadmap";
+const DESCRIPTION =
+  "A live view of what we're building, straight from Creed's task board.";
 
 export const metadata: Metadata = {
-  title: "Roadmap",
-  description:
-    "A live view of what we're building, straight from Creed's task board.",
-  alternates: { canonical: "/roadmap" },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: PATH },
 };
 
 // ISR: re-fetch the live median board about once a minute, so moving a task
@@ -21,5 +27,18 @@ export const revalidate = 60;
 
 export default async function RoadmapPage() {
   const columns = await fetchRoadmap();
-  return <RoadmapPageView columns={columns} />;
+  return (
+    <>
+      <JsonLd
+        data={graph(
+          webPageSchema({ path: PATH, name: TITLE, description: DESCRIPTION }),
+          breadcrumbSchema(PATH, [
+            { name: "Creed", path: "/home" },
+            { name: "Roadmap", path: PATH },
+          ])
+        )}
+      />
+      <RoadmapPageView columns={columns} />
+    </>
+  );
 }

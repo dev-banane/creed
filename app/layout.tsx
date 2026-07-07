@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 // Share-card / search-result imagery, all via Next's filesystem convention:
-// - `app/opengraph-image.png` is wired into `<meta property="og:image">`.
-// - `app/twitter-image.png` is wired into `<meta name="twitter:image">`.
+// - `app/opengraph-image.jpg` is wired into `<meta property="og:image">`.
+// - `app/twitter-image.jpg` is wired into `<meta name="twitter:image">`.
 // - `app/favicon.ico` stays the browser-tab favicon. We pin it explicitly
 //   under `icons.icon` so a future `app/icon.png` doesn't silently take over
 //   and the search-result favicon Google reads stays the one users see in tabs.

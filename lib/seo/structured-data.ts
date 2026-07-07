@@ -41,7 +41,7 @@ export function organizationSchema() {
     "@id": organizationId(),
     name: SITE_NAME,
     url,
-    logo: `${url}/opengraph-image.png`,
+    logo: `${url}/opengraph-image.jpg`,
     description: SITE_DESCRIPTION,
     ...(sameAs.length > 0 ? { sameAs } : {}),
   };
@@ -60,11 +60,18 @@ export function websiteSchema() {
   };
 }
 
-// The product itself. Offers mirror the live pricing (free self-host, $12/mo
-// Personal, $99/yr, $199 lifetime) so a price quoted in an AI answer matches
-// the pricing page.
+// The product itself. Offers mirror the live pricing (free self-host, Personal
+// $12/mo, $99/yr, $199 lifetime, and the live Company plan $129/mo, $999/yr,
+// $1,999 lifetime) so a price quoted in an AI answer matches the pricing page.
 export function softwareApplicationSchema() {
   const url = base();
+  const offer = (name: string, price: string) => ({
+    "@type": "Offer",
+    name,
+    price,
+    priceCurrency: "USD",
+    url: `${url}/pricing`,
+  });
 
   return {
     "@type": "SoftwareApplication",
@@ -73,36 +80,16 @@ export function softwareApplicationSchema() {
     description: SITE_DESCRIPTION,
     applicationCategory: "ProductivityApplication",
     operatingSystem: "Web",
-    image: `${url}/opengraph-image.png`,
+    image: `${url}/opengraph-image.jpg`,
     publisher: { "@id": organizationId() },
     offers: [
-      {
-        "@type": "Offer",
-        name: "Free (self-host)",
-        price: "0",
-        priceCurrency: "USD",
-      },
-      {
-        "@type": "Offer",
-        name: "Personal (monthly)",
-        price: "12",
-        priceCurrency: "USD",
-        url: `${url}/pricing`,
-      },
-      {
-        "@type": "Offer",
-        name: "Personal (yearly)",
-        price: "99",
-        priceCurrency: "USD",
-        url: `${url}/pricing`,
-      },
-      {
-        "@type": "Offer",
-        name: "Personal (lifetime)",
-        price: "199",
-        priceCurrency: "USD",
-        url: `${url}/pricing`,
-      },
+      { "@type": "Offer", name: "Free (self-host)", price: "0", priceCurrency: "USD" },
+      offer("Personal (monthly)", "12"),
+      offer("Personal (yearly)", "99"),
+      offer("Personal (lifetime)", "199"),
+      offer("Company (monthly)", "129"),
+      offer("Company (yearly)", "999"),
+      offer("Company (lifetime)", "1999"),
     ],
   };
 }
@@ -123,15 +110,19 @@ export function faqPageSchema(items: FaqItem[]) {
 
 // A WebPage node for a content page, optionally with breadcrumbs. Used by the
 // /context explainer so the page reads as a defined entity tied to the
-// site, not an orphan.
+// site, not an orphan. Pass `dateModified` (ISO date) to signal freshness,
+// which answer engines weight for time-sensitive queries; it must match the
+// visible "Last updated" line on the page so the two never disagree.
 export function webPageSchema({
   path,
   name,
   description,
+  dateModified,
 }: {
   path: string;
   name: string;
   description: string;
+  dateModified?: string;
 }) {
   const url = `${base()}${path}`;
 
@@ -143,6 +134,40 @@ export function webPageSchema({
     description,
     isPartOf: { "@id": websiteId() },
     breadcrumb: { "@id": `${url}#breadcrumb` },
+    ...(dateModified ? { dateModified } : {}),
+  };
+}
+
+// An Article node for a /learn guide. Authored and published by the Creed
+// organization; datePublished/dateModified drive the freshness signal that AI
+// engines weight, so keep dateModified in step with the article's registry.
+export function articleSchema({
+  path,
+  headline,
+  description,
+  datePublished,
+  dateModified,
+}: {
+  path: string;
+  headline: string;
+  description: string;
+  datePublished: string;
+  dateModified: string;
+}) {
+  const url = `${base()}${path}`;
+
+  return {
+    "@type": "Article",
+    "@id": `${url}#article`,
+    url,
+    headline,
+    description,
+    datePublished,
+    dateModified,
+    isPartOf: { "@id": websiteId() },
+    author: { "@id": organizationId() },
+    publisher: { "@id": organizationId() },
+    image: `${base()}/opengraph-image.jpg`,
   };
 }
 

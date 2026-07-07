@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { Check, Star, X } from "lucide-react";
@@ -20,11 +20,14 @@ import {
 } from "@/components/marketing/use-stripe-checkout";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { GITHUB_URL } from "@/lib/branding";
+import {
+  COMPANY_PRICING,
+  PERSONAL_PRICING,
+  type BillingCycle,
+} from "@/lib/marketing/pricing";
 import { cn } from "@/lib/utils";
 
 type Feature = { label: string; included: boolean; star?: boolean };
-
-type BillingCycle = "monthly" | "yearly" | "lifetime";
 
 const SHARED_FEATURES: Feature[] = [
   { label: "Full Creed editor with rich components", included: true },
@@ -70,47 +73,12 @@ function companyFeatures(cycle: BillingCycle): Feature[] {
   ];
 }
 
-// Per-cycle price + copy for the Personal and Company cards. Company is
-// display-only (Coming Soon); its prices are placeholders until the tier ships.
-type CardPricing = { price: string; cadence: string; tagline: string };
+// Per-cycle price + copy for the Personal and Company cards live in
+// lib/marketing/pricing.ts so the cards, the crawlable reference table, the
+// Offer schema, and the llms files all quote one set of numbers. The Company
+// plan is live and purchasable; both cards run the real checkout.
 
-const PERSONAL_PRICING: Record<BillingCycle, CardPricing> = {
-  monthly: {
-    price: "$12",
-    cadence: "/mo",
-    tagline: "Solo access, billed monthly.",
-  },
-  yearly: {
-    price: "$99",
-    cadence: "/yr",
-    tagline: "Solo access, billed yearly.",
-  },
-  lifetime: {
-    price: "$199",
-    cadence: "one-time",
-    tagline: "Solo access, hosted and yours forever.",
-  },
-};
-
-const COMPANY_PRICING: Record<BillingCycle, CardPricing> = {
-  monthly: {
-    price: "$129",
-    cadence: "/mo",
-    tagline: "10 seats, then $12/mo each.",
-  },
-  yearly: {
-    price: "$999",
-    cadence: "/yr",
-    tagline: "10 seats, then $99/yr each.",
-  },
-  lifetime: {
-    price: "$1,999",
-    cadence: "one-time",
-    tagline: "10 lifetime seats, then $199 each.",
-  },
-};
-
-export function PricingPageView() {
+export function PricingPageView({ reference }: { reference?: ReactNode }) {
   const [scrolled, setScrolled] = useState(false);
   // Monthly is the front door: the strategy is "subscribe to try, own it if
   // you love it", so the page opens on the monthly price.
@@ -201,6 +169,8 @@ export function PricingPageView() {
             want model spend on your own key.
           </p>
         </section>
+
+        {reference}
       </main>
 
       <MarketingFooter />

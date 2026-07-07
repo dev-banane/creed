@@ -5,7 +5,6 @@ import { AnimatedPageTitle, AnimatedSectionHeading } from "@/components/marketin
 import { MarketingFooter, MarketingHeroBanner } from "@/components/marketing/site-chrome";
 import { CONTACT_EMAIL } from "@/lib/branding";
 
-const lastUpdated = "April 8, 2026";
 const contactEmail = CONTACT_EMAIL;
 
 type TermsSection = {
@@ -147,7 +146,7 @@ const sections: TermsSection[] = [
     title: "13. Changes to these Terms",
     paragraphs: [
       "Creed may update these Terms from time to time.",
-      "If the Terms are updated, the revised version will be posted on this page with a new “Last updated” date.",
+      "If the Terms are updated, the revised version will be posted on this page.",
       "By continuing to use Creed after changes take effect, you agree to the updated Terms.",
     ],
   },
@@ -198,13 +197,8 @@ export function TermsPageView() {
           </p>
         </div>
 
-        <div className="border-b border-[var(--creed-border)] pb-8 pt-8 text-[14px] text-[var(--creed-text-secondary)]">
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-            <span>
-              <span className="text-[var(--creed-text-tertiary)]">Last updated</span> {lastUpdated}
-            </span>
-          </div>
-          <div className="mt-6 space-y-4 text-[16px] leading-8 md:text-[17px]">
+        <div className="border-b border-[var(--creed-border)] pb-8 pt-8 text-[var(--creed-text-secondary)]">
+          <div className="space-y-4 text-[16px] leading-8 md:text-[17px]">
             {introParagraphs.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}

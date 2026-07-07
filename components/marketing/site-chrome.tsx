@@ -36,8 +36,18 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Product",
     items: [
       { label: "Pricing", href: "/pricing" },
+      { label: "Company", href: "/company" },
       { label: "Examples", href: "/examples" },
       { label: "Roadmap", href: "/roadmap" },
+    ],
+  },
+  {
+    label: "Resources",
+    items: [
+      { label: "Docs", href: "/docs" },
+      { label: "Learn", href: "/learn" },
+      { label: "Context", href: "/context" },
+      { label: "Changelog", href: "/changelog" },
     ],
   },
   {
@@ -46,13 +56,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { label: "Privacy", href: "/privacy" },
       { label: "Terms", href: "/terms" },
       { label: "Stack", href: "/stack" },
-    ],
-  },
-  {
-    label: "Resources",
-    items: [
-      { label: "Docs", href: "/docs" },
-      { label: "Context", href: "/context" },
       { label: "Contact", href: CONTACT_MAILTO },
     ],
   },
@@ -777,12 +780,9 @@ export function MarketingFooter() {
         </div>
 
         <div className="grid gap-8 sm:grid-cols-3">
-          <FooterColumn title="Product" links={["Pricing", "Examples", "Roadmap"]} />
-          <FooterColumn title="Legal" links={["Privacy", "Terms", "Stack"]} />
-          <FooterColumn
-            title="Resources"
-            links={["Docs", "Context", "Contact"]}
-          />
+          {navGroups.map((group) => (
+            <FooterColumn key={group.label} title={group.label} items={group.items} />
+          ))}
         </div>
       </div>
 
@@ -875,40 +875,21 @@ export function MarketingFooter() {
   );
 }
 
-function FooterColumn({ title, links }: { title: string; links: string[] }) {
+// Driven by the same `navGroups` as the header so the two never drift.
+function FooterColumn({ title, items }: { title: string; items: NavItem[] }) {
   return (
     <div>
       <div className="t-body-lg font-medium text-[var(--creed-text-primary)]">
         {title}
       </div>
       <div className="mt-4 space-y-3">
-        {links.map((link) => (
+        {items.map((item) => (
           <Link
-            key={link}
-            href={
-              link === "Pricing"
-                ? "/pricing"
-                : link === "Examples"
-                  ? "/examples"
-                  : link === "Roadmap"
-                  ? "/roadmap"
-                  : link === "Privacy"
-                  ? "/privacy"
-                  : link === "Terms"
-                    ? "/terms"
-                    : link === "Stack"
-                      ? "/stack"
-                      : link === "Docs"
-                        ? "/docs"
-                        : link === "Context"
-                          ? "/context"
-                          : link === "Contact"
-                            ? CONTACT_MAILTO
-                            : "#"
-            }
+            key={item.label}
+            href={item.href}
             className="t-body-lg block text-[var(--creed-text-secondary)] hover:text-[#2563EB]"
           >
-            {link}
+            {item.label}
           </Link>
         ))}
       </div>

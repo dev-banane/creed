@@ -12,10 +12,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { AnimatedPageTitle, AnimatedSectionHeading } from "@/components/marketing/animated-page-title";
-import { MarketingFooter, MarketingHeroBanner } from "@/components/marketing/site-chrome";
+import {
+  AnimatedPageTitle,
+  AnimatedSectionHeading,
+} from "@/components/marketing/animated-page-title";
+import {
+  MarketingFooter,
+  MarketingHeroBanner,
+} from "@/components/marketing/site-chrome";
 import { useOpenSections } from "@/components/marketing/use-open-sections";
-import { ArrowRightIcon, type ArrowRightIconHandle } from "@/components/ui/arrow-right";
+import {
+  ArrowRightIcon,
+  type ArrowRightIconHandle,
+} from "@/components/ui/arrow-right";
 import { cn } from "@/lib/utils";
 
 type Example = {
@@ -39,7 +48,11 @@ const groups: ExampleGroup[] = [
     name: "Builders",
     intro: "Your stack and standards, carried across every coding agent.",
   },
-  { slug: "writers", name: "Writers", intro: "One voice, in every tool you write with." },
+  {
+    slug: "writers",
+    name: "Writers",
+    intro: "One voice, in every tool you write with.",
+  },
   {
     slug: "researchers",
     name: "Researchers",
@@ -58,13 +71,19 @@ const groups: ExampleGroup[] = [
   {
     slug: "boundaries",
     name: "Boundaries",
-    intro: "Lines an agent reads first and never crosses, long after you set them.",
+    intro:
+      "Lines an agent reads first and never crosses, long after you set them.",
   },
-  { slug: "everyday", name: "Everyday", intro: "The ordinary wins, for anyone." },
+  {
+    slug: "everyday",
+    name: "Everyday",
+    intro: "The ordinary wins, for anyone.",
+  },
   {
     slug: "health",
     name: "Health and safety",
-    intro: "Facts that have to hold in every tool, even ones with no medical context of their own.",
+    intro:
+      "Facts that have to hold in every tool, even ones with no medical context of their own.",
   },
 ];
 
@@ -76,7 +95,7 @@ const examples: Example[] = [
     label: "Plan to build",
     title: "Plan in one tool, build in another",
     scenario:
-      "You sketch a service in ChatGPT, then build it in Claude Code. Both use your house style and your default stack. You paste nothing between them.",
+      "You sketch a service in ChatGPT, then build it in Claude Code. Both use your house style and your default stack.",
   },
   {
     group: "builders",
@@ -276,7 +295,7 @@ const examples: Example[] = [
     label: "Leave a vendor",
     title: "Leave a vendor, keep everything",
     scenario:
-      "Cancel one AI and open another the same day. It already knows you, because your context never lived inside the subscription. Export it as Markdown anytime.",
+      "Cancel one AI and open another the same day. It already knows you, because your context never lived inside the subscription. Export it anytime.",
   },
   {
     group: "ownership",
@@ -400,7 +419,7 @@ const examples: Example[] = [
     label: "Training",
     title: "Training that respects your injury",
     scenario:
-      "Ask any assistant for next week's runs. It caps the long run and works around your bad knee, because it read your goal and your schedule first.",
+      "Ask any assistant for next week's runs. It caps the long run and works around your bad knee, because it read your goal and schedule first.",
   },
   {
     group: "everyday",
@@ -481,16 +500,24 @@ const navGroups = groups.map((group) => ({
     .map((example) => ({ id: example.id, label: example.label })),
 }));
 
-const exampleGroupById = new Map(examples.map((example) => [example.id, example.group]));
+const exampleGroupById = new Map(
+  examples.map((example) => [example.id, example.group]),
+);
 const examplesByGroup = new Map(
-  groups.map((group) => [group.slug, examples.filter((example) => example.group === group.slug)])
+  groups.map((group) => [
+    group.slug,
+    examples.filter((example) => example.group === group.slug),
+  ]),
 );
 
 export function ExamplesPageView() {
   const [scrolled, setScrolled] = useState(false);
   const [activeId, setActiveId] = useState(examples[0]?.id ?? "");
   // One group open at a time so the sidebar stays compact.
-  const { isOpen, toggle } = useOpenSections(groups.map((group) => group.slug), 1);
+  const { isOpen, toggle } = useOpenSections(
+    groups.map((group) => group.slug),
+    1,
+  );
 
   const activeGroup = exampleGroupById.get(activeId);
 
@@ -526,7 +553,9 @@ export function ExamplesPageView() {
         // the right of a grid row doesn't win over the taller one on its left.
         const topmost = entries
           .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+          .sort(
+            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
+          )[0];
 
         if (topmost?.target?.id) {
           setActiveId(topmost.target.id);
@@ -535,7 +564,7 @@ export function ExamplesPageView() {
       {
         rootMargin: "-96px 0px -65% 0px",
         threshold: 0,
-      }
+      },
     );
 
     elements.forEach((element) => observer.observe(element));
@@ -571,10 +600,14 @@ export function ExamplesPageView() {
 
       <main className="mx-auto max-w-6xl px-6 pb-20 pt-8 md:px-10 md:pb-24 md:pt-10">
         <div className="border-b border-[var(--creed-border)] pb-8">
-          <AnimatedPageTitle text="Examples" className="t-section text-[var(--creed-text-primary)]" />
+          <AnimatedPageTitle
+            text="Examples"
+            className="t-section text-[var(--creed-text-primary)]"
+          />
           <p className="mt-5 max-w-3xl text-[17px] leading-8 text-[var(--creed-text-secondary)] md:text-[18px]">
-            What changes when every AI you use reads the same file before it answers. You write your
-            Creed once, each agent reads it before it replies, and it stays plain Markdown you own.
+            What changes when every AI you use reads the same file before it
+            answers. You write your Creed once, each agent reads it before it
+            replies, and it stays plain Markdown you own.
           </p>
         </div>
 
@@ -601,7 +634,7 @@ export function ExamplesPageView() {
                     <ChevronDown
                       className={cn(
                         "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
-                        open ? "" : "-rotate-90"
+                        open ? "" : "-rotate-90",
                       )}
                     />
                   </button>
@@ -657,14 +690,16 @@ export function ExamplesPageView() {
                         aria-expanded={open}
                         className={cn(
                           "flex w-full items-center justify-between gap-2 py-1.5 text-left text-[15px] font-medium transition-opacity hover:opacity-70",
-                          isActiveGroup ? "text-[#2563EB]" : "text-[var(--creed-text-primary)]"
+                          isActiveGroup
+                            ? "text-[#2563EB]"
+                            : "text-[var(--creed-text-primary)]",
                         )}
                       >
                         <span>{entry.name}</span>
                         <ChevronDown
                           className={cn(
                             "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
-                            open ? "" : "-rotate-90"
+                            open ? "" : "-rotate-90",
                           )}
                         />
                       </button>
@@ -675,7 +710,10 @@ export function ExamplesPageView() {
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                            transition={{
+                              duration: 0.24,
+                              ease: [0.16, 1, 0.3, 1],
+                            }}
                             className="overflow-hidden"
                           >
                             <div className="mb-3 mt-1 space-y-3">
@@ -691,7 +729,7 @@ export function ExamplesPageView() {
                                     "block text-[14px] leading-6 transition-colors",
                                     activeId === item.id
                                       ? "font-medium text-[#2563EB]"
-                                      : "text-[var(--creed-text-secondary)] hover:text-[var(--creed-text-primary)]"
+                                      : "text-[var(--creed-text-secondary)] hover:text-[var(--creed-text-primary)]",
                                   )}
                                 >
                                   {item.label}
@@ -715,7 +753,9 @@ export function ExamplesPageView() {
                 id={group.slug}
                 className={cn(
                   "scroll-mt-28 py-8 md:py-10",
-                  index === groups.length - 1 ? "" : "border-b border-[var(--creed-border)]"
+                  index === groups.length - 1
+                    ? ""
+                    : "border-b border-[var(--creed-border)]",
                 )}
               >
                 <AnimatedSectionHeading text={group.name} className="t-step" />

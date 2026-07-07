@@ -9,7 +9,6 @@ import { AnimatedPageTitle, AnimatedSectionHeading } from "@/components/marketin
 import { MarketingFooter, MarketingHeroBanner } from "@/components/marketing/site-chrome";
 import { CONTACT_EMAIL } from "@/lib/branding";
 
-const lastUpdated = "8 April 2026";
 const contactEmail = CONTACT_EMAIL;
 
 type PrivacySection = {
@@ -191,13 +190,8 @@ export function PrivacyPageView() {
           </p>
         </div>
 
-        <div className="border-b border-[var(--creed-border)] pb-8 pt-8 text-[14px] text-[var(--creed-text-secondary)]">
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-            <span>
-              <span className="text-[var(--creed-text-tertiary)]">Last updated</span> {lastUpdated}
-            </span>
-          </div>
-          <p className="mt-6 text-[16px] leading-8 md:text-[17px]">
+        <div className="border-b border-[var(--creed-border)] pb-8 pt-8 text-[var(--creed-text-secondary)]">
+          <p className="text-[16px] leading-8 md:text-[17px]">
             Creed is a service that helps people create and maintain a structured personal context
             file for use with connected AI agents. This notice explains what personal information
             Creed collects, how it is used, who it is shared with, and the choices you have under
