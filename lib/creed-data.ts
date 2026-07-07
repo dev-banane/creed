@@ -1700,8 +1700,8 @@ export function buildHiddenAgentGuidanceMarkdown(options?: {
       "Use the FULL toolbox. The user can see when an agent only ships paragraphs and bullets, and treats it as a low-quality proposal.",
       "",
       "#### Hard rules (no exceptions)",
-      "1. EVERY new section you create must use AT LEAST THREE of: heading, subheading, numbered list, bullet list, callout, code block, horizontal rule, inline tags. A section made entirely of bullets is a failed section. Rewrite it.",
-      "2. EVERY tool / app / environment / brand list MUST be inline tags (`#linear #notion #figma`). Never bullets of tool names. Never a paragraph listing them with commas. Tags or it's wrong.",
+      "1. EVERY new section you create must use AT LEAST THREE of: heading, subheading, numbered list, bullet list, callout, code block, horizontal rule, section references. A section made entirely of bullets is a failed section. Rewrite it.",
+      "2. Graph tags are section references only. Use them sparingly to point from one section to another relevant section, for example `#Goals` or `#Preferences`. Do not tag tools, apps, brands, themes, or random labels.",
       "3. EVERY hard rule, do/don't, warning, or constraint MUST be a `> callout`. Never a bullet. Never a paragraph. The accent strip is what makes the rule visible.",
       "4. Any section with more than ~6 lines of content MUST be broken up with `### subheadings`. A flat list of 8+ bullets is a failed section. Group them.",
       "5. Any section that covers two or more meaningfully distinct topics MUST use a `---` horizontal rule between them.",
@@ -1710,7 +1710,7 @@ export function buildHiddenAgentGuidanceMarkdown(options?: {
       "",
       "#### Self-check before submitting (run mentally; reject your own draft if any answer is no)",
       "- Does this draft contain at least three of the eight components? If no, rewrite.",
-      "- Are all tool/app/brand mentions written as `#tags`? If they're in bullets or commas, rewrite.",
+      "- Are graph tags used only for real section references? If a hashtag names a tool, app, brand, theme, or generic label, rewrite it as plain text.",
       "- Is every hard rule wrapped in `> callout`? If any rule is a bullet, rewrite.",
       "- Are related items grouped under `### subheadings` rather than dumped flat? If flat, rewrite.",
       "- If the section has multiple distinct chunks, is there a `---` between them? If not, add one.",
@@ -1745,21 +1745,21 @@ export function buildHiddenAgentGuidanceMarkdown(options?: {
       "  When: a section is long enough to have two or more distinct chunks of meaning. One or two rules per section is plenty.",
       "  Don't: scatter rules between every list. They lose meaning if overused.",
       "",
-      "**Inline tags** - short repeatable labels.",
-      "  Syntax: `#word` inline within prose or list items. The hash must be preceded by start-of-line or whitespace. Hyphens and underscores work, e.g. `#deep-work`.",
-      "  When: tools, environments, themes, recurring labels. ALWAYS use tags for tool lists. `Tools: #linear #notion #figma` is right; bullet-listing those names is wrong.",
-      "  Don't: tag full sentences. Don't tag every other word - 4 to 8 tags per section is the sweet spot. They render as coloured chips, so over-tagging looks noisy.",
+      "**Section references** - graph tags that point to other sections.",
+      "  Syntax: `#SectionName` or `#section-id` inline within prose or in a short reference line. The tag only resolves when it names an existing visible section.",
+      "  When: another section gives useful context for this one. Example: a Goals note can reference `#Work`; a hard preference can reference `#Constraints`.",
+      "  Don't: tag tools, apps, brands, themes, full sentences, or generic labels. If it is not a real section, leave it as plain text.",
       "",
       "**Paragraphs** - plain prose.",
       "  Syntax: a line of text with a blank line above and below.",
       "  When: a single durable fact or context that doesn't fit a list or callout. A paragraph should be one idea.",
       "",
       "Quality rules (the user's quality popover scores against these):",
-      "- Pick the block that matches the meaning. A list of three rules is a list. A warning is a callout. A tool list is tags. A command is a code block.",
+      "- Pick the block that matches the meaning. A list of three rules is a list. A warning is a callout. Related sections are graph tags. A command is a code block.",
       "- One block per idea. Don't cram three rules into one bullet.",
       "- Group related material under a `### subheading` instead of leaving a flat list of 8+ bullets.",
       "- A long section earns one or two `---` dividers between major chunks.",
-      "- A tool list is ALWAYS `#tag #tag #tag`. Never bullets of tool names.",
+      "- Section-reference tags are optional. Add them only when they clarify which other sections an agent should read nearby.",
       "- A hard rule the AI should never break is ALWAYS a `> callout`. Never a bullet.",
       "",
       "Worked example - a Routines section that uses every component appropriately:",
@@ -1779,7 +1779,9 @@ export function buildHiddenAgentGuidanceMarkdown(options?: {
       "---",
       "",
       "### Tools they live in",
-      "#linear #notion #figma #github #raycast",
+      "Linear, Notion, Figma, GitHub, and Raycast.",
+      "",
+      "Related sections: #Goals #Preferences",
       "",
       "### Standing scripts",
       "Reusable bash they keep nearby:",
@@ -1797,10 +1799,10 @@ export function buildHiddenAgentGuidanceMarkdown(options?: {
       "- Tools: linear, notion, figma, github, raycast.",
       "- Monday is for planning, Wednesday for deep work, Friday for review.",
       "```",
-      "Why it's bad: everything is a flat bullet list, the hard rule isn't a callout, the tools aren't tags, the days aren't grouped under a subheading, and there are no visual separators. The rendered file looks like a notes scratchpad, not a curated profile.",
+      "Why it's bad: everything is a flat bullet list, the hard rule isn't a callout, the tools are fake graph tags, the days aren't grouped under a subheading, and there are no visual separators. The rendered file looks like a notes scratchpad, not a curated profile.",
       "",
       "When to use a NEW section vs richer formatting in an existing one:",
-      "- Stay in the existing section if the new content is a fact or rule that fits the section's meaning. Use richer formatting (headings, callouts, tags) to organise it.",
+      "- Stay in the existing section if the new content is a fact or rule that fits the section's meaning. Use richer formatting such as headings, callouts, lists, and optional section references to organise it.",
       '- Create a new section only when the user has a recurring kind of content that genuinely doesn\'t fit any of the 10 defaults (Identity, Beliefs, Goals, Work, Preferences, Constraints, People, Health, Routines, Context). Examples: Reading, Travel, Music, Finances. Set `accent: "custom"` and pick a sensible `insertAfterSectionId`.',
       "",
       "- Do not hunt for other routes. Use the endpoint and token above.",
@@ -2035,19 +2037,19 @@ export function getProposalPreviewText(draft: ProposalDraft) {
   );
 }
 
-// Activity rows render before/after through a word-level diff. Rename, recolor,
-// and reorder proposals use compact labels because they change metadata. Section
-// deletion uses the real section body so the count reflects the removed content.
-// Returns null for non-meta drafts; callers should fall back to their existing
-// behaviour in that case.
+// Activity rows render before/after through a word-level diff. Section metadata
+// proposals use compact labels because they change file structure rather than
+// paragraph text. Returns null for non-meta drafts; callers should fall back to
+// their existing behaviour in that case.
 export function getMetaProposalDiffText(
   draft: ProposalDraft,
   section?: { name?: string; accent?: AccentKey; content?: string } | null,
 ): { before: string; after: string } | null {
   if (draft.kind === "delete-section") {
+    const name = section?.name ?? "section";
     return {
-      before: section?.content ?? "",
-      after: "",
+      before: `Keep ${name}`,
+      after: `Delete ${name}`,
     };
   }
   if (draft.kind === "rename-section") {

@@ -9,7 +9,7 @@
 //   • Agent (⌘ tap)     - the in-app Creed agent. Plans edits in the MCP
 //     proposal contract, streams live progress, files proposals from "Creed",
 //     and keeps running in the background even if you close the panel.
-// @ mentions a section (Ask + Agent). Backspace on an empty input returns to
+// # references a section (Ask + Agent). Backspace on an empty input returns to
 // Search. Esc steps back to Search, then closes.
 
 import {
@@ -1118,7 +1118,7 @@ export function CreedPanel({
   return (
     // Non-modal on purpose: a modal Radix dialog installs react-remove-scroll,
     // which blocks wheel/trackpad scrolling everywhere except the dialog content
-    // - and the @-mention popup is portaled to the body, so it couldn't scroll.
+    // - and the #-section popup is portaled to the body, so it couldn't scroll.
     // We lock background scroll ourselves (see the effect above) instead.
     <Dialog open={open} onOpenChange={handleOpenChange} modal={false}>
       <DialogPortal>
@@ -1144,8 +1144,8 @@ export function CreedPanel({
             }
           }}
           onInteractOutside={(event) => {
-            // The @-mention popup is portaled to the body (outside Content), so
-            // a click on a mention row reads as "outside" and would dismiss the
+            // The #-section popup is portaled to the body (outside Content), so
+            // a click on a section row reads as "outside" and would dismiss the
             // whole panel. Keep it open when the interaction is inside the popup.
             const target = event.target as HTMLElement | null;
             if (target?.closest("[data-creed-mention-popup]"))
@@ -1282,7 +1282,7 @@ export function CreedPanel({
                     {askTurns.length === 0 && askPhase === "idle" ? (
                       <div className="px-0.5 py-1 text-[13px] leading-[1.55] text-[var(--creed-text-tertiary)]">
                         Ask about your creed, a feature, or where to find
-                        something. Type @ to mention a section.
+                        something. Type # to mention a section.
                       </div>
                     ) : null}
                     {askTurns.map((turn, index) =>
@@ -1338,7 +1338,7 @@ export function CreedPanel({
                     {agentRun.status === "idle" ? (
                       <div className="px-0.5 py-1 text-[13px] leading-[1.55] text-[var(--creed-text-tertiary)]">
                         Tell Creed what to change. It follows your agent
-                        permissions. Type @ to mention a section.
+                        permissions. Type # to mention a section.
                       </div>
                     ) : null}
 

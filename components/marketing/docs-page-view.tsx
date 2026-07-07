@@ -3,9 +3,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { AnimatedPageTitle, AnimatedSectionHeading } from "@/components/marketing/animated-page-title";
+import {
+  AnimatedPageTitle,
+  AnimatedSectionHeading,
+} from "@/components/marketing/animated-page-title";
 import { IntegrationGlyph } from "@/components/creed/brand";
-import { MarketingFooter, MarketingHeroBanner } from "@/components/marketing/site-chrome";
+import {
+  MarketingFooter,
+  MarketingHeroBanner,
+} from "@/components/marketing/site-chrome";
 import { useOpenSections } from "@/components/marketing/use-open-sections";
 import { AnimatedIconButton } from "@/components/creed/animated-icon-action";
 import { AnimatedCheckmark } from "@/components/ui/animated-checkmark";
@@ -117,6 +123,18 @@ const sections: DocsSection[] = [
     paragraphs: [
       "A Creed has ten sections: five always-on core sections everyone fills in, and five optional ones that appear only once you use them. The whole thing is plain Markdown, sized to read end to end in under a minute.",
       "Aim for specific over complete. A short profile that changes how AI replies beats a long one that reads like a resume.",
+    ],
+  },
+  {
+    id: "graph-tags-nexus",
+    label: "Graph Tags and Nexus",
+    group: "Start here",
+    title: "Graph Tags and Nexus",
+    paragraphs: [
+      "Graph Tags are section references. They tell agents which other sections are nearby context, and they power Nexus, the graph view in the file header.",
+      "Typing # in the editor opens a section picker. It becomes a styled chip only when it matches a real visible section, case-insensitively. If it does not match a section, it stays plain hashtag text.",
+      "Use a short Graph Tags subsection near the end of each section when it helps. Two to four related sections is usually enough. Do not use Graph Tags for tools, apps, brands, themes, clients, or random labels unless those are actual section names.",
+      "Nexus is read-only in v1. It shows visible sections as draggable nodes, colours each node with the section accent, draws tethers from valid section references, ignores fake tags, and shows the section name plus quality score on hover.",
     ],
   },
   {
@@ -348,19 +366,64 @@ const loopSteps: LoopStep[] = [
 ];
 
 const anatomyCore: AnatomyEntry[] = [
-  { name: "Identity", color: "#7C3AED", blurb: "Role, defining traits, values, and the defaults that follow you everywhere." },
-  { name: "Goals", color: "#EA580C", blurb: "Live priorities, near-term outcomes and longer-horizon aims." },
-  { name: "Work", color: "#0284C7", blurb: "What you do, the tools you reach for, and how you like to work." },
-  { name: "Preferences", color: "#0E7490", blurb: "Reply-style defaults with concrete do and avoid signals." },
-  { name: "Routines", color: "#4F46E5", blurb: "Daily, weekly, and seasonal rhythms AI should respect." },
+  {
+    name: "Identity",
+    color: "#7C3AED",
+    blurb:
+      "Role, defining traits, values, and the defaults that follow you everywhere.",
+  },
+  {
+    name: "Goals",
+    color: "#EA580C",
+    blurb: "Live priorities, near-term outcomes and longer-horizon aims.",
+  },
+  {
+    name: "Work",
+    color: "#0284C7",
+    blurb: "What you do, the tools you reach for, and how you like to work.",
+  },
+  {
+    name: "Preferences",
+    color: "#0E7490",
+    blurb: "Reply-style defaults with concrete do and avoid signals.",
+  },
+  {
+    name: "Routines",
+    color: "#4F46E5",
+    blurb: "Daily, weekly, and seasonal rhythms AI should respect.",
+  },
 ];
 
 const anatomyOptional: AnatomyEntry[] = [
-  { name: "Beliefs", color: "#059669", blurb: "Stable values and worldview that change how AI reasons or recommends." },
-  { name: "Constraints", color: "#DC2626", blurb: "Hard noes, sensitive topics, and actions that need explicit permission." },
-  { name: "People", color: "#E11D48", blurb: "Named relationships AI should remember and treat consistently." },
-  { name: "Health", color: "#65A30D", blurb: "Conditions, accessibility needs, and dietary patterns to accommodate." },
-  { name: "Context", color: "#6B7280", blurb: "Durable catch-all: location, life stage, environment, background facts." },
+  {
+    name: "Beliefs",
+    color: "#059669",
+    blurb:
+      "Stable values and worldview that change how AI reasons or recommends.",
+  },
+  {
+    name: "Constraints",
+    color: "#DC2626",
+    blurb:
+      "Hard noes, sensitive topics, and actions that need explicit permission.",
+  },
+  {
+    name: "People",
+    color: "#E11D48",
+    blurb: "Named relationships AI should remember and treat consistently.",
+  },
+  {
+    name: "Health",
+    color: "#65A30D",
+    blurb:
+      "Conditions, accessibility needs, and dietary patterns to accommodate.",
+  },
+  {
+    name: "Context",
+    color: "#6B7280",
+    blurb:
+      "Durable catch-all: location, life stage, environment, background facts.",
+  },
 ];
 
 const exampleCreed = `## Identity
@@ -429,11 +492,23 @@ const recurringBullets: string[] = [
 ];
 
 const qualityPractices: QualityPractice[] = [
-  { name: "Specific", test: "Names real things: tools, people, numbers, dates, defaults. Not language anyone could have written." },
-  { name: "Anchored", test: "Claims carry an example, a rule, or a consequence, so AI knows how to act, not just what is true." },
-  { name: "Steering", test: "It would actually change how AI replies. The most important test." },
+  {
+    name: "Specific",
+    test: "Names real things: tools, people, numbers, dates, defaults. Not language anyone could have written.",
+  },
+  {
+    name: "Anchored",
+    test: "Claims carry an example, a rule, or a consequence, so AI knows how to act, not just what is true.",
+  },
+  {
+    name: "Steering",
+    test: "It would actually change how AI replies. The most important test.",
+  },
   { name: "Current", test: "Nothing stale, abandoned, or self-contradicting." },
-  { name: "Tight", test: "No padding or repetition. Every line earns its place." },
+  {
+    name: "Tight",
+    test: "No padding or repetition. Every line earns its place.",
+  },
 ];
 
 const overallRules: string[] = [
@@ -447,30 +522,79 @@ const toolGroups: ToolGroup[] = [
   {
     title: "Read and inspect",
     tools: [
-      { name: "read_creed", description: "Read the full profile plus the private agent contract." },
-      { name: "list_sections", description: "List sections with their ids, names, and accents." },
-      { name: "creed_get_section", description: "Fetch one section by id or name, with its content and metadata." },
-      { name: "creed_search", description: "Find where a fact lives without reading the whole profile." },
-      { name: "creed_get_recent_activity", description: "See recent changes so agents avoid duplicate proposals." },
-      { name: "creed_get_quality_report", description: "Read the latest quality report to target the weakest sections." },
-      { name: "get_write_policy", description: "Check the current write mode and what edits are allowed." },
+      {
+        name: "read_creed",
+        description: "Read the full profile plus the private agent contract.",
+      },
+      {
+        name: "list_sections",
+        description: "List sections with their ids, names, and accents.",
+      },
+      {
+        name: "creed_get_section",
+        description:
+          "Fetch one section by id or name, with its content and metadata.",
+      },
+      {
+        name: "creed_search",
+        description:
+          "Find where a fact lives without reading the whole profile.",
+      },
+      {
+        name: "creed_get_recent_activity",
+        description: "See recent changes so agents avoid duplicate proposals.",
+      },
+      {
+        name: "creed_get_quality_report",
+        description:
+          "Read the latest quality report to target the weakest sections.",
+      },
+      {
+        name: "get_write_policy",
+        description: "Check the current write mode and what edits are allowed.",
+      },
     ],
   },
   {
     title: "Edit content",
     tools: [
-      { name: "creed_update_section", description: "Replace a section's body. Params: sectionId, contentMarkdown." },
-      { name: "creed_append_to_section", description: "Add to a section without rewriting it. Params: sectionId, contentMarkdown." },
+      {
+        name: "creed_update_section",
+        description:
+          "Replace a section's body. Params: sectionId, contentMarkdown.",
+      },
+      {
+        name: "creed_append_to_section",
+        description:
+          "Add to a section without rewriting it. Params: sectionId, contentMarkdown.",
+      },
     ],
   },
   {
     title: "Manage sections",
     tools: [
-      { name: "creed_create_section", description: "Add a new section. Params: name, contentMarkdown, optional accent." },
-      { name: "creed_delete_section", description: "Remove a section. Params: sectionId." },
-      { name: "creed_rename_section", description: "Rename a section. Params: sectionId, name." },
-      { name: "creed_recolor_section", description: "Change a section's accent. Params: sectionId, accent." },
-      { name: "creed_reorder_section", description: "Move a section. Params: sectionId, then afterSectionId or position." },
+      {
+        name: "creed_create_section",
+        description:
+          "Add a new section. Params: name, contentMarkdown, optional accent.",
+      },
+      {
+        name: "creed_delete_section",
+        description: "Remove a section. Params: sectionId.",
+      },
+      {
+        name: "creed_rename_section",
+        description: "Rename a section. Params: sectionId, name.",
+      },
+      {
+        name: "creed_recolor_section",
+        description: "Change a section's accent. Params: sectionId, accent.",
+      },
+      {
+        name: "creed_reorder_section",
+        description:
+          "Move a section. Params: sectionId, then afterSectionId or position.",
+      },
     ],
   },
 ];
@@ -479,12 +603,14 @@ const referenceItems: ReferenceItem[] = [
   {
     kind: "Prompt",
     name: "introduce-me",
-    description: "Read my Creed and introduce me the way a sharp collaborator would.",
+    description:
+      "Read my Creed and introduce me the way a sharp collaborator would.",
   },
   {
     kind: "Prompt",
     name: "tighten-my-creed",
-    description: "Review my Creed and propose tightening or pruning where it has drifted.",
+    description:
+      "Review my Creed and propose tightening or pruning where it has drifted.",
   },
   {
     kind: "Resource",
@@ -498,19 +624,22 @@ const httpEndpoints: HttpEndpoint[] = [
     method: "GET",
     path: "/api/creed",
     summary: "Read the profile.",
-    detail: "Returns the visible Markdown plus the hidden agent contract as plain text. Up to 120 requests per minute.",
+    detail:
+      "Returns the visible Markdown plus the hidden agent contract as plain text. Up to 120 requests per minute.",
   },
   {
     method: "POST",
     path: "/api/creed/proposals",
     summary: "Submit a proposal.",
-    detail: "JSON body with the target section, draft, and reason. Works in every mode. Up to 60 per minute.",
+    detail:
+      "JSON body with the target section, draft, and reason. Works in every mode. Up to 60 per minute.",
   },
   {
     method: "POST",
     path: "/api/creed/write",
     summary: "Apply a direct edit.",
-    detail: "JSON body with an operation and its payload. Succeeds only for sections set to direct edit. Up to 60 per minute.",
+    detail:
+      "JSON body with an operation and its payload. Succeeds only for sections set to direct edit. Up to 60 per minute.",
   },
 ];
 
@@ -667,10 +796,7 @@ const exampleGroups: ExampleGroup[] = [
       "Lactose intolerant. Suggest dairy-free alternatives in any recipe.",
       "ADHD. Break long plans into short steps and surface one next action at a time.",
     ],
-    bad: [
-      "Generally healthy.",
-      "Had a headache this afternoon.",
-    ],
+    bad: ["Generally healthy.", "Had a headache this afternoon."],
   },
   {
     title: "People",
@@ -777,7 +903,9 @@ const navGroups = (() => {
   return order.map((group) => ({ group, items: map.get(group)! }));
 })();
 
-const sectionGroupById = new Map(sections.map((section) => [section.id, section.group]));
+const sectionGroupById = new Map(
+  sections.map((section) => [section.id, section.group]),
+);
 
 function MonoCode({ children }: { children: ReactNode }) {
   return (
@@ -824,7 +952,9 @@ function FileBlock({ label, children }: { label: string; children: string }) {
         </AnimatedIconButton>
       </div>
       <pre className="overflow-x-auto px-4 py-4 text-[13px] leading-7 text-[var(--creed-text-secondary)]">
-        <code style={{ fontFamily: "var(--font-mono), monospace" }}>{children}</code>
+        <code style={{ fontFamily: "var(--font-mono), monospace" }}>
+          {children}
+        </code>
       </pre>
     </div>
   );
@@ -832,9 +962,14 @@ function FileBlock({ label, children }: { label: string; children: string }) {
 
 export function DocsPageView() {
   const [scrolled, setScrolled] = useState(false);
-  const [activeSection, setActiveSection] = useState(navItems[0]?.id ?? "overview");
+  const [activeSection, setActiveSection] = useState(
+    navItems[0]?.id ?? "overview",
+  );
   // One group open at a time so the long docs nav stays compact.
-  const { isOpen, toggle } = useOpenSections(navGroups.map((group) => group.group), 1);
+  const { isOpen, toggle } = useOpenSections(
+    navGroups.map((group) => group.group),
+    1,
+  );
 
   const activeGroup = sectionGroupById.get(activeSection);
 
@@ -874,7 +1009,9 @@ export function DocsPageView() {
         // short neighbor win even when the tall section is the one at the top.
         const topmost = entries
           .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+          .sort(
+            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
+          )[0];
 
         if (topmost?.target?.id) {
           setActiveSection(topmost.target.id);
@@ -883,7 +1020,7 @@ export function DocsPageView() {
       {
         rootMargin: "-96px 0px -65% 0px",
         threshold: 0,
-      }
+      },
     );
 
     sectionElements.forEach((element) => observer.observe(element));
@@ -928,7 +1065,8 @@ export function DocsPageView() {
             className="t-section text-[var(--creed-text-primary)]"
           />
           <p className="mt-5 max-w-5xl text-[17px] leading-8 text-[var(--creed-text-secondary)] md:text-[18px]">
-            What Creed is, what goes in it, how to connect your agents, how they read and improve it, and the full tool and API reference.
+            What Creed is, what goes in it, how to connect your agents, how they
+            read and improve it, and the full tool and API reference.
           </p>
         </div>
 
@@ -937,7 +1075,9 @@ export function DocsPageView() {
             without the scrollspy highlight: a sidebar that isn't on screen
             while you scroll has nothing to highlight, so the links stay plain. */}
         <div className="mt-8 block lg:hidden">
-          <div className="text-[18px] font-semibold tracking-[-0.01em] text-[var(--creed-text-primary)]">On this page</div>
+          <div className="text-[18px] font-semibold tracking-[-0.01em] text-[var(--creed-text-primary)]">
+            On this page
+          </div>
           <nav className="mt-5 space-y-1">
             {navGroups.map((group) => {
               const open = isOpen(group.group);
@@ -953,7 +1093,7 @@ export function DocsPageView() {
                     <ChevronDown
                       className={cn(
                         "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
-                        open ? "" : "-rotate-90"
+                        open ? "" : "-rotate-90",
                       )}
                     />
                   </button>
@@ -1009,14 +1149,16 @@ export function DocsPageView() {
                         aria-expanded={open}
                         className={cn(
                           "flex w-full items-center justify-between gap-2 py-1.5 text-[15px] font-medium transition-opacity hover:opacity-70",
-                          isActiveGroup ? "text-[#2563EB]" : "text-[var(--creed-text-primary)]"
+                          isActiveGroup
+                            ? "text-[#2563EB]"
+                            : "text-[var(--creed-text-primary)]",
                         )}
                       >
                         <span>{group.group}</span>
                         <ChevronDown
                           className={cn(
                             "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
-                            open ? "" : "-rotate-90"
+                            open ? "" : "-rotate-90",
                           )}
                         />
                       </button>
@@ -1027,7 +1169,10 @@ export function DocsPageView() {
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                            transition={{
+                              duration: 0.24,
+                              ease: [0.16, 1, 0.3, 1],
+                            }}
                             className="overflow-hidden"
                           >
                             <div className="mb-3 mt-1 space-y-3">
@@ -1043,7 +1188,7 @@ export function DocsPageView() {
                                     "block text-[14px] leading-6 transition-colors",
                                     activeSection === section.id
                                       ? "font-medium text-[#2563EB]"
-                                      : "text-[var(--creed-text-secondary)] hover:text-[var(--creed-text-primary)]"
+                                      : "text-[var(--creed-text-secondary)] hover:text-[var(--creed-text-primary)]",
                                   )}
                                 >
                                   {section.label}
@@ -1067,10 +1212,15 @@ export function DocsPageView() {
                 id={section.id}
                 className={cn(
                   "scroll-mt-28 py-8 md:py-10",
-                  index === sections.length - 1 ? "" : "border-b border-[var(--creed-border)]"
+                  index === sections.length - 1
+                    ? ""
+                    : "border-b border-[var(--creed-border)]",
                 )}
               >
-                <AnimatedSectionHeading text={section.title} className="t-step" />
+                <AnimatedSectionHeading
+                  text={section.title}
+                  className="t-step"
+                />
 
                 {section.paragraphs ? (
                   <div className="mt-5 space-y-4 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
@@ -1092,7 +1242,10 @@ export function DocsPageView() {
                   <>
                     <div className="mt-8 grid gap-4 md:grid-cols-2">
                       {loopSteps.map((loopStep) => (
-                        <div key={loopStep.step} className="rounded-[20px] bg-[var(--creed-surface)] p-5">
+                        <div
+                          key={loopStep.step}
+                          className="rounded-[20px] bg-[var(--creed-surface)] p-5"
+                        >
                           <div className="flex items-center gap-3">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[#2563EB] text-[13px] font-medium text-[var(--creed-surface)]">
                               {loopStep.step}
@@ -1108,8 +1261,9 @@ export function DocsPageView() {
                       ))}
                     </div>
                     <p className="mt-6 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
-                      You stay in control of every change. Trusted agents can be granted direct-edit access per
-                      section; everything else stays a proposal you approve.
+                      You stay in control of every change. Trusted agents can be
+                      granted direct-edit access per section; everything else
+                      stays a proposal you approve.
                     </p>
                   </>
                 ) : null}
@@ -1123,7 +1277,10 @@ export function DocsPageView() {
                         </div>
                         <div className="mt-4 space-y-4">
                           {anatomyCore.map((entry) => (
-                            <div key={entry.name} className="flex items-start gap-3">
+                            <div
+                              key={entry.name}
+                              className="flex items-start gap-3"
+                            >
                               <span
                                 aria-hidden
                                 className="mt-[7px] h-2.5 w-2.5 shrink-0 rounded-[3px]"
@@ -1147,7 +1304,10 @@ export function DocsPageView() {
                         </div>
                         <div className="mt-4 space-y-4">
                           {anatomyOptional.map((entry) => (
-                            <div key={entry.name} className="flex items-start gap-3">
+                            <div
+                              key={entry.name}
+                              className="flex items-start gap-3"
+                            >
                               <span
                                 aria-hidden
                                 className="mt-[7px] h-2.5 w-2.5 shrink-0 rounded-[3px]"
@@ -1186,10 +1346,14 @@ export function DocsPageView() {
                   </div>
                 ) : null}
 
-                {section.id.startsWith("agents-") && agentCardsBySection[section.id] ? (
+                {section.id.startsWith("agents-") &&
+                agentCardsBySection[section.id] ? (
                   <div className="mt-8 grid gap-4 md:grid-cols-2">
                     {agentCardsBySection[section.id].map((card) => (
-                      <div key={card.name} className="rounded-[20px] bg-[var(--creed-surface)] p-5">
+                      <div
+                        key={card.name}
+                        className="rounded-[20px] bg-[var(--creed-surface)] p-5"
+                      >
                         <div className="flex items-center gap-3">
                           <IntegrationGlyph
                             kind={card.glyph}
@@ -1212,11 +1376,17 @@ export function DocsPageView() {
                 {section.id === "how-agents-should-use-creed" ? (
                   <p className="mt-6 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
                     Set this up from{" "}
-                    <Link href="/connections" className="font-medium text-[#2563EB] hover:text-[#1D4ED8]">
+                    <Link
+                      href="/connections"
+                      className="font-medium text-[#2563EB] hover:text-[#1D4ED8]"
+                    >
                       Connections
                     </Link>
                     , then review proposed updates from the{" "}
-                    <Link href="/file" className="font-medium text-[#2563EB] hover:text-[#1D4ED8]">
+                    <Link
+                      href="/file"
+                      className="font-medium text-[#2563EB] hover:text-[#1D4ED8]"
+                    >
                       file view
                     </Link>
                     .
@@ -1251,7 +1421,10 @@ export function DocsPageView() {
                 {section.id === "how-each-section-works" ? (
                   <div className="mt-8 space-y-8">
                     {sectionGuides.map((guide) => (
-                      <div key={guide.title} className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0">
+                      <div
+                        key={guide.title}
+                        className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0"
+                      >
                         <h3 className="text-[18px] font-medium text-[var(--creed-text-primary)]">
                           {guide.title}
                         </h3>
@@ -1285,7 +1458,10 @@ export function DocsPageView() {
                 {section.id === "good-and-bad-proposal-examples" ? (
                   <div className="mt-8 space-y-8">
                     {exampleGroups.map((group) => (
-                      <div key={group.title} className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0">
+                      <div
+                        key={group.title}
+                        className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0"
+                      >
                         <h3 className="text-[18px] font-medium text-[var(--creed-text-primary)]">
                           {group.title}
                         </h3>
@@ -1296,7 +1472,10 @@ export function DocsPageView() {
                             </div>
                             <ul className="mt-3 space-y-2 text-[15px] leading-7 text-[var(--creed-text-secondary)] md:text-[16px]">
                               {group.good.map((item) => (
-                                <li key={item} className="flex items-start gap-2">
+                                <li
+                                  key={item}
+                                  className="flex items-start gap-2"
+                                >
                                   <span
                                     aria-hidden
                                     className="mt-[3px] shrink-0 font-mono text-[14px] font-medium leading-6 text-[var(--creed-success)]"
@@ -1314,7 +1493,10 @@ export function DocsPageView() {
                             </div>
                             <ul className="mt-3 space-y-2 text-[15px] leading-7 text-[var(--creed-text-secondary)] md:text-[16px]">
                               {group.bad.map((item) => (
-                                <li key={item} className="flex items-start gap-2">
+                                <li
+                                  key={item}
+                                  className="flex items-start gap-2"
+                                >
                                   <span
                                     aria-hidden
                                     className="mt-[3px] shrink-0 font-mono text-[14px] font-medium leading-6 text-[var(--creed-danger)]"
@@ -1378,8 +1560,9 @@ export function DocsPageView() {
                       ))}
                     </div>
                     <p className="mt-8 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
-                      The overall score is computed from the sections, not asked of the model, so the headline never
-                      drifts from what it summarizes.
+                      The overall score is computed from the sections, not asked
+                      of the model, so the headline never drifts from what it
+                      summarizes.
                     </p>
                     <ul className="creed-bullets mt-4 space-y-3 text-[15px] leading-8 text-[var(--creed-text-secondary)] [--creed-bullet:#2563EB] md:text-[16px]">
                       {overallRules.map((rule) => (
@@ -1393,7 +1576,10 @@ export function DocsPageView() {
                   <>
                     <div className="mt-8 space-y-8">
                       {toolGroups.map((group) => (
-                        <div key={group.title} className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0">
+                        <div
+                          key={group.title}
+                          className="border-t border-[var(--creed-border)] pt-6 first:border-t-0 first:pt-0"
+                        >
                           <h3 className="text-[18px] font-medium text-[var(--creed-text-primary)]">
                             {group.title}
                           </h3>
@@ -1416,10 +1602,14 @@ export function DocsPageView() {
                       ))}
                     </div>
                     <p className="mt-8 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
-                      Two lower-level tools sit underneath these: <MonoCode>propose_creed_update</MonoCode> submits a
-                      proposal in any mode, and <MonoCode>direct_edit_creed</MonoCode> applies a change immediately
-                      where a section allows it (it stays hidden until at least one section is set to direct edit). The
-                      flat tools above are built on them and are easier to call correctly.
+                      Two lower-level tools sit underneath these:{" "}
+                      <MonoCode>propose_creed_update</MonoCode> submits a
+                      proposal in any mode, and{" "}
+                      <MonoCode>direct_edit_creed</MonoCode> applies a change
+                      immediately where a section allows it (it stays hidden
+                      until at least one section is set to direct edit). The
+                      flat tools above are built on them and are easier to call
+                      correctly.
                     </p>
 
                     <div className="mt-8 border-t border-[var(--creed-border)] pt-6">
@@ -1445,9 +1635,10 @@ export function DocsPageView() {
                         ))}
                       </div>
                       <p className="mt-6 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
-                        When a client connects, the server also sends an instructions field carrying the
-                        read-before-work, propose-narrowly contract, so agents behave correctly without you pasting a
-                        setup prompt.
+                        When a client connects, the server also sends an
+                        instructions field carrying the read-before-work,
+                        propose-narrowly contract, so agents behave correctly
+                        without you pasting a setup prompt.
                       </p>
                     </div>
                   </>
@@ -1466,13 +1657,17 @@ export function DocsPageView() {
                           </span>
                           <span
                             className="text-[14px] text-[var(--creed-text-primary)]"
-                            style={{ fontFamily: "var(--font-mono), monospace" }}
+                            style={{
+                              fontFamily: "var(--font-mono), monospace",
+                            }}
                           >
                             {endpoint.path}
                           </span>
                         </div>
                         <p className="mt-3 text-[15px] leading-7 text-[var(--creed-text-secondary)] md:text-[16px]">
-                          <span className="text-[var(--creed-text-primary)]">{endpoint.summary}</span>{" "}
+                          <span className="text-[var(--creed-text-primary)]">
+                            {endpoint.summary}
+                          </span>{" "}
                           {endpoint.detail}
                         </p>
                       </div>
@@ -1483,7 +1678,10 @@ export function DocsPageView() {
                 {section.id === "data-and-privacy" ? (
                   <p className="mt-6 text-[15px] leading-8 text-[var(--creed-text-secondary)] md:text-[16px]">
                     Read the full{" "}
-                    <Link href="/privacy" className="font-medium text-[#2563EB] hover:text-[#1D4ED8]">
+                    <Link
+                      href="/privacy"
+                      className="font-medium text-[#2563EB] hover:text-[#1D4ED8]"
+                    >
                       privacy policy
                     </Link>{" "}
                     for the complete picture.

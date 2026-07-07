@@ -14,13 +14,28 @@ test("company seed: always emits the 8 default sections in order", () => {
   const sections = buildCompanyOnboardingSections(EMPTY_COMPANY_ONBOARDING);
   assert.deepEqual(
     sections.map((s) => s.id),
-    ["company", "ethos", "operating-rules", "people", "projects", "clients", "tools", "agent-rules"]
+    [
+      "company",
+      "ethos",
+      "operating-rules",
+      "people",
+      "projects",
+      "clients",
+      "tools",
+      "agent-rules",
+    ],
   );
   // Every section has content (stub or real) and is agent-writable.
   for (const s of sections) {
     assert.equal(s.kind, "rich-text");
     assert.equal(s.agentWritable, true);
     assert.ok(s.content.length > 0, `${s.id} should have content`);
+    assert.match(s.content, /Graph Tags/, `${s.id} should teach graph tags`);
+    assert.match(
+      s.content,
+      /creed-inline-tag/,
+      `${s.id} should include section reference chips`,
+    );
   }
 });
 
@@ -45,9 +60,15 @@ test("company seed: answers land in the right sections", () => {
 });
 
 test("company name falls back when blank", () => {
-  assert.equal(companyNameFromOnboarding(EMPTY_COMPANY_ONBOARDING), "Your company");
   assert.equal(
-    companyNameFromOnboarding({ ...EMPTY_COMPANY_ONBOARDING, companyName: "  1706  " }),
-    "1706"
+    companyNameFromOnboarding(EMPTY_COMPANY_ONBOARDING),
+    "Your company",
+  );
+  assert.equal(
+    companyNameFromOnboarding({
+      ...EMPTY_COMPANY_ONBOARDING,
+      companyName: "  1706  ",
+    }),
+    "1706",
   );
 });

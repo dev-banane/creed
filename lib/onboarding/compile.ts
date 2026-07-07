@@ -6,8 +6,8 @@ import {
   WORK_SECTION_ID,
   type CreedSection,
   type OnboardingState,
-} from "@/lib/creed-data";
-import { escapeHtml } from "@/lib/rich-text";
+} from "../creed-data.ts";
+import { escapeHtml } from "../rich-text.ts";
 
 // Onboarding compiles three open answers into a deterministic seed: the five
 // always-on core sections. Identity, Goals, and Preferences carry the user's
@@ -19,11 +19,15 @@ import { escapeHtml } from "@/lib/rich-text";
 // Stubs are gentle prompts. Identity / Goals / Preferences only fall back to one
 // if the user skipped the question; Work and Routines always start as a stub
 // because no question feeds them directly.
-const IDENTITY_STUB = "Add who you are, what you do, and the tools you work in.";
-const GOALS_STUB = "Add a goal or project AI should know you are working toward.";
-const WORK_STUB = "Add how you like to work, your process and the people you collaborate with.";
+const IDENTITY_STUB =
+  "Add who you are, what you do, and the tools you work in.";
+const GOALS_STUB =
+  "Add a goal or project AI should know you are working toward.";
+const WORK_STUB =
+  "Add how you like to work, your process and the people you collaborate with.";
 const PREFERENCES_STUB = "Lead with the answer. Skip filler and over-praise.";
-const ROUTINES_STUB = "Add a daily, weekly, or seasonal rhythm AI should respect.";
+const ROUTINES_STUB =
+  "Add a daily, weekly, or seasonal rhythm AI should respect.";
 
 export type OnboardingPreviewDraft = {
   identityText: string;
@@ -32,7 +36,10 @@ export type OnboardingPreviewDraft = {
 };
 
 function normalizeWhitespace(value: string) {
-  return value.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return value
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function cleanInline(value: string) {
@@ -72,12 +79,16 @@ function toRuleLines(value: string, limit: number) {
   const cleaned = normalizeWhitespace(value);
   if (!cleaned) return [];
   const rawLines = cleaned.split(/\n+/).filter(Boolean);
-  const pieces = rawLines.length > 1 ? rawLines : cleaned.split(/(?<=[.!?])\s+/);
+  const pieces =
+    rawLines.length > 1 ? rawLines : cleaned.split(/(?<=[.!?])\s+/);
   return dedupe(pieces.map(toRuleSentence).filter(Boolean)).slice(0, limit);
 }
 
-export function compileOnboardingDraft(onboarding: OnboardingState): OnboardingPreviewDraft {
-  const identityText = normalizeWhitespace(onboarding.identity) || IDENTITY_STUB;
+export function compileOnboardingDraft(
+  onboarding: OnboardingState,
+): OnboardingPreviewDraft {
+  const identityText =
+    normalizeWhitespace(onboarding.identity) || IDENTITY_STUB;
   const goalsText = normalizeWhitespace(onboarding.goals) || GOALS_STUB;
   const preferences = toRuleLines(onboarding.preferences, 6);
 
@@ -95,7 +106,7 @@ export function compileOnboardingDraft(onboarding: OnboardingState): OnboardingP
 function makeSection(
   partial: Pick<CreedSection, "id" | "name" | "accent" | "content"> & {
     template?: CreedSection["template"];
-  }
+  },
 ): CreedSection {
   return {
     id: partial.id,
@@ -130,42 +141,58 @@ function bulletList(items: string[]) {
     .join("")}</ul>`;
 }
 
-export function buildOnboardingPreviewSections(draft: OnboardingPreviewDraft): CreedSection[] {
+function graphTags(names: string[]) {
+  if (!names.length) return "";
+  const tags = names
+    .map((name) => {
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      return `<span class="creed-inline-tag" data-tag="${escapeHtml(slug)}">${escapeHtml(name)}</span>`;
+    })
+    .join(" ");
+  return `<h3>Graph Tags</h3><p>${tags}</p>`;
+}
+
+export function buildOnboardingPreviewSections(
+  draft: OnboardingPreviewDraft,
+): CreedSection[] {
   return [
     makeSection({
       id: IDENTITY_SECTION_ID,
       name: "Identity",
       accent: "identity",
       template: "identity",
-      content: paragraphContent(draft.identityText) || `<p>${escapeHtml(draft.identityText)}</p>`,
+      content: `${paragraphContent(draft.identityText) || `<p>${escapeHtml(draft.identityText)}</p>`}${graphTags(["Goals", "Work", "Preferences"])}`,
     }),
     makeSection({
       id: GOALS_SECTION_ID,
       name: "Goals",
       accent: "projects",
       template: "focus",
-      content: paragraphContent(draft.goalsText) || `<p>${escapeHtml(draft.goalsText)}</p>`,
+      content: `${paragraphContent(draft.goalsText) || `<p>${escapeHtml(draft.goalsText)}</p>`}${graphTags(["Identity", "Work", "Routines"])}`,
     }),
     makeSection({
       id: WORK_SECTION_ID,
       name: "Work",
       accent: "tools",
       template: "freeform",
-      content: paragraphContent(WORK_STUB),
+      content: `${paragraphContent(WORK_STUB)}${graphTags(["Goals", "Preferences", "Routines"])}`,
     }),
     makeSection({
       id: PREFERENCES_SECTION_ID,
       name: "Preferences",
       accent: "preferences",
       template: "principles",
-      content: bulletList(draft.preferences),
+      content: `${bulletList(draft.preferences)}${graphTags(["Identity", "Work", "Routines"])}`,
     }),
     makeSection({
       id: ROUTINES_SECTION_ID,
       name: "Routines",
       accent: "workflows",
       template: "principles",
-      content: bulletList([ROUTINES_STUB]),
+      content: `${bulletList([ROUTINES_STUB])}${graphTags(["Goals", "Work", "Preferences"])}`,
     }),
   ];
 }

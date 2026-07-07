@@ -418,7 +418,7 @@ const tools = [
         sectionId: { type: "string" },
         contentMarkdown: {
           type: "string",
-          description: "Markdown to append. Use rich components (callouts, lists, tags) for non-trivial additions.",
+          description: "Markdown to append. Use rich components (callouts, lists, section references) for non-trivial additions.",
         },
         reason: { type: "string", description: "Optional rationale." },
       },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { loadActiveCreedState, persistCreedState } from "@/lib/creed-backend";
 import { resolveActiveCreed } from "@/lib/creed-context";
 import { requireApiAuth } from "@/lib/api-auth";
+import { log } from "@/lib/observability";
 import { validateCreedState } from "@/lib/validation/creed-state";
 
 export async function GET() {
@@ -27,7 +28,7 @@ export async function PUT(request: Request) {
     if (activeEntry?.type === "company") {
       return NextResponse.json(
         { error: "Company Creeds save per section.", code: "companyMode" },
-        { status: 409 }
+        { status: 409 },
       );
     }
   }
@@ -49,6 +50,18 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  await persistCreedState(auth.supabase, auth.user.id, parsed.data);
-  return NextResponse.json({ ok: true });
+  try {
+    await persistCreedState(auth.supabase, auth.user.id, parsed.data);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    log.error(
+      "personal_creed_state_save_failed",
+      { userId: auth.user.id },
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    return NextResponse.json(
+      { error: "Could not save Creed." },
+      { status: 500 },
+    );
+  }
 }

@@ -375,7 +375,10 @@ export function CreedProvider({
       });
 
       if (!response.ok) {
-        throw new Error("Could not save Creed.");
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(data.error ?? "Could not save Creed.");
       }
     },
     [persistenceEnabled],
@@ -399,12 +402,15 @@ export function CreedProvider({
             ? { ...current, saving: false, lastSavedAt: Date.now() }
             : current,
         );
-      } catch {
+      } catch (error) {
         setState((current) => ({ ...current, saving: false }));
         // Surface the failure the house way (sonner) instead of silently
         // showing "Saved". A fixed id collapses repeats so a flaky connection
         // can't stack toasts.
-        toast.error("Couldn't save your changes.", { id: "creed-save-failed" });
+        toast.error(
+          error instanceof Error ? error.message : "Couldn't save your changes.",
+          { id: "creed-save-failed" },
+        );
       }
     },
     [persistState],

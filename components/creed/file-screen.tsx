@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 import { fireConfetti } from "@/lib/confetti";
 import { AnimatedCheckmark } from "@/components/ui/animated-checkmark";
+import { AlignLeftIcon } from "@/components/ui/align-left";
 import { ArchiveIcon } from "@/components/ui/archive";
 import { Button } from "@/components/ui/button";
 import { CloudDownloadIcon } from "@/components/ui/cloud-download";
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/lock-open";
 import { SquarePenIcon } from "@/components/ui/square-pen";
 import { StampIcon, type StampIconHandle } from "@/components/ui/stamp";
+import { WaypointsIcon } from "@/components/ui/waypoints";
 import { AnimatedMenuIconItem } from "@/components/creed/animated-icon-action";
 import { useAnimatedIconControls } from "@/components/creed/animated-icon-controls";
 import {
@@ -89,6 +91,7 @@ import {
   subscribeQualityRunner,
 } from "@/lib/ai/quality-runner";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
+import { NexusView } from "@/components/creed/nexus-view";
 import { CreedFindReplace } from "@/components/creed/find-replace";
 import {
   DiffBadge,
@@ -125,7 +128,10 @@ import {
   type Proposal,
 } from "@/lib/creed-data";
 import { richTextContentEquivalent } from "@/lib/rich-text";
-import { canProposeToSection, resolveSectionPermission } from "@/lib/creed-permissions";
+import {
+  canProposeToSection,
+  resolveSectionPermission,
+} from "@/lib/creed-permissions";
 import { cn } from "@/lib/utils";
 
 const activityStatuses: Array<{
@@ -154,6 +160,9 @@ const QUALITY_FINGERPRINT_IGNORED_KEYS = new Set([
   "lastEditedType",
   "revision",
 ]);
+
+type FileRevealTarget =
+  { type: "section"; id: string } | { type: "proposal"; id: string };
 
 function qualityFingerprint(value: unknown) {
   return JSON.stringify(value, (key, nestedValue) =>
@@ -314,6 +323,46 @@ function resolveSectionAccent(
   }
 
   return summarySection.accent;
+}
+
+function findFileRevealElement(
+  container: HTMLElement,
+  target: FileRevealTarget,
+) {
+  const attribute =
+    target.type === "proposal" ? "data-proposal-id" : "data-section-id";
+  const datasetKey = target.type === "proposal" ? "proposalId" : "sectionId";
+
+  return (
+    Array.from(container.querySelectorAll<HTMLElement>(`[${attribute}]`)).find(
+      (element) => element.dataset[datasetKey] === target.id,
+    ) ?? null
+  );
+}
+
+function scrollFileElementIntoView(
+  container: HTMLElement,
+  element: HTMLElement,
+  behavior: ScrollBehavior,
+) {
+  const stickyHeader = container.querySelector<HTMLElement>(
+    "[data-file-sticky-header]",
+  );
+  const stickyOffset = stickyHeader?.getBoundingClientRect().height ?? 96;
+  const containerRect = container.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+
+  container.scrollTo({
+    top: Math.max(
+      container.scrollTop +
+        elementRect.top -
+        containerRect.top -
+        stickyOffset -
+        16,
+      0,
+    ),
+    behavior,
+  });
 }
 
 type SectionChangeKind = "added" | "removed" | "modified";
@@ -756,12 +805,22 @@ export function FileScreen() {
   const canRunQuality = state.creedType !== "company" || isCompanyManager;
   // All non-frozen members can SEE quality scores (the shared report is loaded
   // as a baseline for everyone). This controls ring display, not the refresh button.
-  const canSeeQuality = state.creedType !== "company" || state.company?.accessState !== "frozen";
+  const canSeeQuality =
+    state.creedType !== "company" || state.company?.accessState !== "frozen";
   // Archived sections stay in state (so they persist) but are hidden from the
   // editor; the section list renders from this live set.
   const visibleSections = useMemo(
     () => state.sections.filter((section) => !section.archived),
     [state.sections],
+  );
+  const visibleSectionTagTargets = useMemo(
+    () =>
+      visibleSections.map((section) => ({
+        id: section.id,
+        name: section.name,
+        accent: section.accent,
+      })),
+    [visibleSections],
   );
   const pendingProposals = useMemo(
     () => state.proposals.filter((proposal) => proposal.status === "pending"),
@@ -855,6 +914,9 @@ export function FileScreen() {
   const [selectedVersionAction, setSelectedVersionAction] = useState<
     "push" | "pull"
   >("push");
+  const [fileViewMode, setFileViewMode] = useState<"editor" | "nexus">(
+    "editor",
+  );
   const [renameSectionState, setRenameSectionState] = useState<{
     id: string;
     name: string;
@@ -887,6 +949,7 @@ export function FileScreen() {
   const sectionsRef = useRef(state.sections);
   sectionsRef.current = state.sections;
   const versionIcon = useAnimatedIconControls();
+  const nexusIcon = useAnimatedIconControls();
   const activityIcon = useAnimatedIconControls();
   // `exportMarkdown` is re-created by the provider whenever state changes,
   // so depending on it alone is sufficient - listing `state.sections`
@@ -898,6 +961,16 @@ export function FileScreen() {
         (qualityReport?.sections ?? []).map((section) => [
           section.sectionId,
           section,
+        ]),
+      ),
+    [qualityReport],
+  );
+  const nexusScoresBySectionId = useMemo(
+    () =>
+      new Map(
+        (qualityReport?.sections ?? []).map((section) => [
+          section.sectionId,
+          section.score,
         ]),
       ),
     [qualityReport],
@@ -1214,7 +1287,13 @@ export function FileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [currentFullFingerprint, qualityEnabled, qualityReport, state.sections, applyBaselinePayload]);
+  }, [
+    currentFullFingerprint,
+    qualityEnabled,
+    qualityReport,
+    state.sections,
+    applyBaselinePayload,
+  ]);
 
   // Company mode: the report is shared, so another member's (or the owner's)
   // analysis needs to reach everyone else without a manual refresh. Re-read the
@@ -1256,7 +1335,12 @@ export function FileScreen() {
   }, [state.creedType, qualityEnabled, applyBaselinePayload]);
 
   async function refreshFullQuality() {
-    if (!qualityEnabled || !canRunQuality || qualityLoading || state.sections.length === 0) {
+    if (
+      !qualityEnabled ||
+      !canRunQuality ||
+      qualityLoading ||
+      state.sections.length === 0
+    ) {
       return;
     }
 
@@ -1272,7 +1356,10 @@ export function FileScreen() {
     const isMember = state.creedType === "company" && !isCompanyManager;
     const sectionsToSend = isMember
       ? state.sections.filter((section) => {
-          const permission = resolveSectionPermission("member", myPermissions?.[section.id]);
+          const permission = resolveSectionPermission(
+            "member",
+            myPermissions?.[section.id],
+          );
           return canProposeToSection(permission);
         })
       : state.sections;
@@ -1321,7 +1408,10 @@ export function FileScreen() {
     const myPermissions = state.company?.myPermissions;
     const isMember = state.creedType === "company" && !isCompanyManager;
     if (isMember) {
-      const permission = resolveSectionPermission("member", myPermissions?.[section.id]);
+      const permission = resolveSectionPermission(
+        "member",
+        myPermissions?.[section.id],
+      );
       if (!canProposeToSection(permission)) {
         return;
       }
@@ -1376,11 +1466,22 @@ export function FileScreen() {
 
   const openComposerAndReveal = useCallback(
     (afterSectionId?: string) => {
+      setFileViewMode("editor");
       openComposer(afterSectionId);
 
-      window.setTimeout(() => {
-        scrollComposerIntoView("smooth");
-      }, 60);
+      let attempts = 0;
+      const tryScroll = () => {
+        if (scrollComposerIntoView("smooth")) {
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < 24) {
+          window.requestAnimationFrame(tryScroll);
+        }
+      };
+
+      window.requestAnimationFrame(tryScroll);
     },
     [openComposer, scrollComposerIntoView],
   );
@@ -1645,55 +1746,95 @@ export function FileScreen() {
   const scrollLockRef = useRef<{ sectionId: string; until: number } | null>(
     null,
   );
+  const revealFrameRef = useRef<number | null>(null);
 
-  const handleSectionSelect = useCallback(
-    (sectionId: string) => {
-      const container = editorScrollRef.current;
+  const revealEditorTarget = useCallback(
+    (target: FileRevealTarget, behavior: ScrollBehavior = "smooth") => {
+      setFileViewMode("editor");
 
-      if (!container) {
-        return;
+      if (revealFrameRef.current !== null) {
+        window.cancelAnimationFrame(revealFrameRef.current);
+        revealFrameRef.current = null;
       }
 
-      const element = container.querySelector<HTMLElement>(
-        `[data-section-id="${sectionId}"]`,
-      );
+      let attempts = 0;
+      const tryReveal = () => {
+        const container = editorScrollRef.current;
+        const element = container
+          ? findFileRevealElement(container, target)
+          : null;
 
-      if (!element) {
-        return;
-      }
+        if (container && element) {
+          scrollFileElementIntoView(container, element, behavior);
 
-      const stickyHeader = container.querySelector<HTMLElement>(
-        "[data-file-sticky-header]",
-      );
-      const stickyOffset = stickyHeader?.getBoundingClientRect().height ?? 96;
+          const sectionId =
+            target.type === "section"
+              ? target.id
+              : element.closest<HTMLElement>("[data-section-id]")?.dataset
+                  .sectionId;
 
-      scrollLockRef.current = { sectionId, until: Date.now() + 1200 };
-      setActiveShellSection(sectionId);
+          if (sectionId) {
+            scrollLockRef.current = {
+              sectionId,
+              until: Date.now() + 1200,
+            };
+            setActiveShellSection(sectionId);
+          }
 
-      container.scrollTo({
-        top: Math.max(element.offsetTop - stickyOffset - 16, 0),
-        behavior: "smooth",
-      });
+          revealFrameRef.current = null;
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < 32) {
+          revealFrameRef.current = window.requestAnimationFrame(tryReveal);
+        } else {
+          revealFrameRef.current = null;
+        }
+      };
+
+      revealFrameRef.current = window.requestAnimationFrame(tryReveal);
     },
     [setActiveShellSection],
   );
 
-  const handleProposalSelect = useCallback((proposalId: string) => {
-    const container = editorScrollRef.current;
-    if (!container) return;
-    const element = container.querySelector<HTMLElement>(
-      `[data-proposal-id="${proposalId}"]`,
-    );
-    if (!element) return;
-    const stickyHeader = container.querySelector<HTMLElement>(
-      "[data-file-sticky-header]",
-    );
-    const stickyOffset = stickyHeader?.getBoundingClientRect().height ?? 96;
-    container.scrollTo({
-      top: Math.max(element.offsetTop - stickyOffset - 16, 0),
-      behavior: "smooth",
-    });
+  useEffect(() => {
+    return () => {
+      if (revealFrameRef.current !== null) {
+        window.cancelAnimationFrame(revealFrameRef.current);
+      }
+    };
   }, []);
+
+  const handleSectionSelect = useCallback(
+    (sectionId: string) => {
+      revealEditorTarget({ type: "section", id: sectionId });
+    },
+    [revealEditorTarget],
+  );
+
+  const revealProposalOrSection = useCallback(
+    (proposalId: string) => {
+      const proposal = normalizedPendingProposals.find(
+        (item) => item.id === proposalId,
+      );
+
+      if (proposal && proposal.draft.kind !== "new-section") {
+        revealEditorTarget({ type: "section", id: proposal.sectionId });
+        return;
+      }
+
+      revealEditorTarget({ type: "proposal", id: proposalId });
+    },
+    [normalizedPendingProposals, revealEditorTarget],
+  );
+
+  const handleProposalSelect = useCallback(
+    (proposalId: string) => {
+      revealProposalOrSection(proposalId);
+    },
+    [revealProposalOrSection],
+  );
 
   // Panel/shell can open the push review and the activity sidebar. The push
   // opener goes through a ref because handleOpenPushReview is re-created every
@@ -1872,7 +2013,6 @@ export function FileScreen() {
     }
 
     let cancelled = false;
-    let frameId = 0;
     let timeoutId = 0;
 
     timeoutId = window.setTimeout(() => {
@@ -1901,74 +2041,33 @@ export function FileScreen() {
         }
 
         if (intent.type === "compose") {
-          const scrolled = scrollComposerIntoView("smooth");
-          const openDelay = scrolled ? 280 : 0;
-          const openTimeoutId = window.setTimeout(() => {
-            if (!cancelled) {
-              openComposer();
-              window.setTimeout(() => {
-                if (!cancelled) {
-                  scrollComposerIntoView("smooth");
-                }
-              }, 60);
-            }
-            window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
-          }, openDelay);
-
-          if (cancelled) {
-            window.clearTimeout(openTimeoutId);
+          window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
+          if (!cancelled) {
+            openComposerAndReveal();
           }
           return;
         }
 
-        let attempts = 0;
+        if (intent.type === "section") {
+          window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
+          revealEditorTarget({ type: "section", id: intent.sectionId });
+          return;
+        }
 
-        const tryScroll = () => {
-          if (cancelled) {
-            return;
-          }
-
-          const container = editorScrollRef.current;
-          const selector =
-            intent.type === "proposal"
-              ? `[data-proposal-id="${intent.proposalId}"]`
-              : `[data-section-id="${intent.sectionId}"]`;
-          const element = container?.querySelector<HTMLElement>(selector);
-
-          if (container && element) {
-            // Scroll the node directly (same as the on-/file review + the
-            // "Jump to section" button). The offsetTop-based helpers weren't
-            // landing on a fresh navigation, so match the mechanism that works.
-            element.scrollIntoView({ behavior: "smooth", block: "start" });
-            if (intent.type === "section") {
-              scrollLockRef.current = {
-                sectionId: intent.sectionId,
-                until: Date.now() + 1200,
-              };
-              setActiveShellSection(intent.sectionId);
-            }
-            window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
-            return;
-          }
-
-          attempts += 1;
-          if (attempts < 24) {
-            frameId = window.requestAnimationFrame(tryScroll);
-          }
-        };
-
-        frameId = window.requestAnimationFrame(tryScroll);
+        if (intent.type === "proposal") {
+          window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
+          revealProposalOrSection(intent.proposalId);
+        }
       } catch {
-        return;
+        window.sessionStorage.removeItem(FILE_NAV_INTENT_KEY);
       }
     }, 140);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
-      window.cancelAnimationFrame(frameId);
     };
-  }, [setActiveShellSection, openComposer, scrollComposerIntoView]);
+  }, [openComposerAndReveal, revealEditorTarget, revealProposalOrSection]);
 
   return (
     <>
@@ -1997,14 +2096,18 @@ export function FileScreen() {
                       <OverallQualityPopover
                         report={qualityReport}
                         loading={qualityLoading}
-                        actionAvailable={canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)}
+                        actionAvailable={
+                          canRunQuality &&
+                          (fullQualityDirty || qualityCanRunInitialAnalysis)
+                        }
                         onAction={() => void refreshFullQuality()}
                       >
                         <button
                           type="button"
                           className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] data-[state=open]:bg-[var(--creed-surface-raised)]"
                           aria-label={
-                            canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)
+                            canRunQuality &&
+                            (fullQualityDirty || qualityCanRunInitialAnalysis)
                               ? "Run Creed quality analysis"
                               : "Show Creed quality"
                           }
@@ -2013,7 +2116,10 @@ export function FileScreen() {
                             score={qualityReport?.overall.score ?? 0}
                             color="#2563EB"
                             loading={qualityLoading}
-                            actionable={canRunQuality && (fullQualityDirty || qualityCanRunInitialAnalysis)}
+                            actionable={
+                              canRunQuality &&
+                              (fullQualityDirty || qualityCanRunInitialAnalysis)
+                            }
                           />
                         </button>
                       </OverallQualityPopover>
@@ -2148,6 +2254,85 @@ export function FileScreen() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
+
+                    {/* Desktop: labelled pill. Mobile: icon-only circle that
+                        matches the Activity button beside it. */}
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={
+                        fileViewMode === "nexus"
+                          ? "Show Tabula view"
+                          : "Show Nexus view"
+                      }
+                      aria-pressed={fileViewMode === "nexus"}
+                      style={{
+                        borderRadius: 13,
+                        height: 32,
+                        width: 32,
+                        minHeight: 32,
+                        minWidth: 32,
+                      }}
+                      className={cn(
+                        "border-[var(--creed-border)] bg-[var(--creed-surface)] md:hidden",
+                        fileViewMode === "nexus" &&
+                          "bg-[var(--creed-surface-raised)] text-[var(--creed-text-primary)]",
+                      )}
+                      onMouseEnter={nexusIcon.start}
+                      onMouseLeave={nexusIcon.settle}
+                      onClick={() => {
+                        setFileViewMode((current) =>
+                          current === "nexus" ? "editor" : "nexus",
+                        );
+                      }}
+                    >
+                      {fileViewMode === "nexus" ? (
+                        <AlignLeftIcon
+                          ref={nexusIcon.iconRef}
+                          size={14}
+                          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                        />
+                      ) : (
+                        <WaypointsIcon
+                          ref={nexusIcon.iconRef}
+                          size={14}
+                          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={fileViewMode === "nexus"}
+                      style={{ borderRadius: 13, height: 32, minHeight: 32 }}
+                      className={cn(
+                        "hidden border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[12px] md:inline-flex md:px-3.5 md:text-sm",
+                        fileViewMode === "nexus" &&
+                          "bg-[var(--creed-surface-raised)] text-[var(--creed-text-primary)]",
+                      )}
+                      onMouseEnter={nexusIcon.start}
+                      onMouseLeave={nexusIcon.settle}
+                      onClick={() => {
+                        setFileViewMode((current) =>
+                          current === "nexus" ? "editor" : "nexus",
+                        );
+                      }}
+                    >
+                      {fileViewMode === "nexus" ? (
+                        <AlignLeftIcon
+                          ref={nexusIcon.iconRef}
+                          size={14}
+                          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                        />
+                      ) : (
+                        <WaypointsIcon
+                          ref={nexusIcon.iconRef}
+                          size={14}
+                          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none"
+                        />
+                      )}
+                      {fileViewMode === "nexus" ? "Tabula" : "Nexus"}
+                    </Button>
 
                     {/* Desktop: labelled pill. Mobile: icon-only circle that
                         matches the Lock button next to it. */}
@@ -2371,14 +2556,10 @@ export function FileScreen() {
                           content: html,
                         });
                         withdrawProposal(proposal.id);
-                        const el = document.querySelector<HTMLElement>(
-                          `[data-section-id="${proposal.sectionId}"]`,
-                        );
-                        if (el)
-                          el.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
+                        revealEditorTarget({
+                          type: "section",
+                          id: proposal.sectionId,
+                        });
                       }}
                       onJumpToProposal={(proposal) => {
                         const targetId =
@@ -2386,305 +2567,319 @@ export function FileScreen() {
                             ? null
                             : proposal.sectionId;
                         if (!targetId) return;
-                        const el = document.querySelector<HTMLElement>(
-                          `[data-section-id="${targetId}"]`,
-                        );
-                        if (el)
-                          el.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
+                        revealEditorTarget({
+                          type: "section",
+                          id: targetId,
+                        });
                       }}
                     />
                   </div>
                 ) : null}
               </div>
 
-              <Reorder.Group
-                axis="y"
-                values={visibleSections.map((section) => section.id)}
-                onReorder={reorderSections}
-                className="space-y-10 md:space-y-16"
-              >
-                {visibleSections.map((section) => {
-                  const quality = sectionQualityById.get(section.id);
-                  const analyzedFingerprint =
-                    analyzedSectionFingerprints[section.id];
-                  const currentFingerprint = sectionFingerprintById.get(
-                    section.id,
-                  );
+              {fileViewMode === "nexus" ? (
+                <NexusView
+                  sections={visibleSections}
+                  scoresBySectionId={nexusScoresBySectionId}
+                />
+              ) : (
+                <>
+                  <Reorder.Group
+                    axis="y"
+                    values={visibleSections.map((section) => section.id)}
+                    onReorder={reorderSections}
+                    className="space-y-10 md:space-y-16"
+                  >
+                    {visibleSections.map((section) => {
+                      const quality = sectionQualityById.get(section.id);
+                      const analyzedFingerprint =
+                        analyzedSectionFingerprints[section.id];
+                      const currentFingerprint = sectionFingerprintById.get(
+                        section.id,
+                      );
 
-                  const isOverridden = state.sectionLockOverrides.includes(
-                    section.id,
-                  );
-                  const baseLocked = isOverridden
-                    ? !state.locked
-                    : state.locked;
-                  // Company mode: a frozen Creed is read-only for everyone, and a
-                  // member with Read-only access on this section cannot edit it.
-                  // Direct/Proposal-only stay editable (Proposal-only edits are
-                  // filed as proposals by the provider).
-                  const myPerm =
-                    state.creedType === "company"
-                      ? (state.company?.myPermissions?.[section.id] ?? "direct")
-                      : "direct";
-                  const frozen =
-                    state.creedType === "company" &&
-                    state.company?.accessState === "frozen";
-                  const companyReadOnly =
-                    state.creedType === "company" &&
-                    (frozen || myPerm === "read-only");
-                  const sectionLocked = baseLocked || companyReadOnly;
-                  // A company member with Proposal-only edits by hand into a local
-                  // draft, then submits it as a proposal (no autosave). Only when
-                  // not frozen and not otherwise locked.
-                  const proposeMode =
-                    state.creedType === "company" &&
-                    myPerm === "propose" &&
-                    !sectionLocked;
-                  // Who may accept/reject proposals on this section: owner/admin
-                  // (always "direct") and Direct-edit members. Proposal-only
-                  // members see proposals preview-only.
-                  const canReview =
-                    state.creedType !== "company" || myPerm === "direct";
-                  // A member's per-section read-only (not the whole-Creed frozen
-                  // state, which has its own banner). Drives the "look but don't
-                  // touch" treatment: no drag, no kebab, a click shows an amber
-                  // "read-only" toast instead of letting them edit.
-                  const readOnlyMember =
-                    state.creedType === "company" &&
-                    !frozen &&
-                    myPerm === "read-only";
-                  const canArchiveSection =
-                    state.creedType !== "company" || isCompanyManager;
-                  return (
-                    <SectionCard
-                      key={section.id}
-                      section={section}
-                      locked={sectionLocked}
-                      proposeMode={proposeMode}
-                      canReview={canReview}
-                      readOnlyMember={readOnlyMember}
-                      canDrag={canReorderSections}
-                      reopenDraft={
-                        reopenDraft?.sectionId === section.id
-                          ? reopenDraft.content
-                          : null
-                      }
-                      onReopenConsumed={() => setReopenDraft(null)}
-                      onSubmitProposal={(content) =>
-                        fileProposalEdit(section.id, content)
-                      }
-                      globalLocked={state.locked}
-                      onToggleLock={() => toggleSectionLock(section.id)}
-                      quality={quality}
-                      qualityLoading={qualitySectionLoading === section.id}
-                      qualityDirty={
-                        qualityEnabled &&
-                        canSeeQuality &&
-                        // Members can only refresh sections they have propose or direct access to.
-                        (state.creedType !== "company" || canProposeToSection(myPerm)) &&
-                        (!quality ||
-                          !analyzedFingerprint ||
-                          analyzedFingerprint !== currentFingerprint)
-                      }
-                      onRefreshQuality={() =>
-                        void refreshSectionQuality(section)
-                      }
-                      proposals={normalizedPendingProposals.filter(
-                        (item) => item.sectionId === section.id,
-                      )}
-                      onAcceptProposal={(id) => {
-                        void acceptProposal(id);
-                      }}
-                      onRejectProposal={(id) => {
-                        rejectProposal(id);
-                      }}
-                      onWithdrawProposal={(id) => {
-                        withdrawProposal(id);
-                      }}
-                      onChangeRichText={(content) => {
-                        updateRichTextSection(section.id, content);
-                      }}
-                      onRename={() =>
-                        setRenameSectionState({
-                          id: section.id,
-                          name: section.name,
-                        })
-                      }
-                      onCopy={() => {
-                        void navigator.clipboard.writeText(
-                          sectionToMarkdown(section).trim(),
-                        );
-                      }}
-                      onSetAccent={(accent) =>
-                        setSectionAccent(section.id, accent)
-                      }
-                      onDelete={() =>
-                        // Defer so the section menu closes before the dialog
-                        // opens, letting the dialog play its enter animation.
-                        window.setTimeout(
-                          () =>
-                            setDeleteSectionState({
+                      const isOverridden = state.sectionLockOverrides.includes(
+                        section.id,
+                      );
+                      const baseLocked = isOverridden
+                        ? !state.locked
+                        : state.locked;
+                      // Company mode: a frozen Creed is read-only for everyone, and a
+                      // member with Read-only access on this section cannot edit it.
+                      // Direct/Proposal-only stay editable (Proposal-only edits are
+                      // filed as proposals by the provider).
+                      const myPerm =
+                        state.creedType === "company"
+                          ? (state.company?.myPermissions?.[section.id] ??
+                            "direct")
+                          : "direct";
+                      const frozen =
+                        state.creedType === "company" &&
+                        state.company?.accessState === "frozen";
+                      const companyReadOnly =
+                        state.creedType === "company" &&
+                        (frozen || myPerm === "read-only");
+                      const sectionLocked = baseLocked || companyReadOnly;
+                      // A company member with Proposal-only edits by hand into a local
+                      // draft, then submits it as a proposal (no autosave). Only when
+                      // not frozen and not otherwise locked.
+                      const proposeMode =
+                        state.creedType === "company" &&
+                        myPerm === "propose" &&
+                        !sectionLocked;
+                      // Who may accept/reject proposals on this section: owner/admin
+                      // (always "direct") and Direct-edit members. Proposal-only
+                      // members see proposals preview-only.
+                      const canReview =
+                        state.creedType !== "company" || myPerm === "direct";
+                      // A member's per-section read-only (not the whole-Creed frozen
+                      // state, which has its own banner). Drives the "look but don't
+                      // touch" treatment: no drag, no kebab, a click shows an amber
+                      // "read-only" toast instead of letting them edit.
+                      const readOnlyMember =
+                        state.creedType === "company" &&
+                        !frozen &&
+                        myPerm === "read-only";
+                      const canArchiveSection =
+                        state.creedType !== "company" || isCompanyManager;
+                      return (
+                        <SectionCard
+                          key={section.id}
+                          section={section}
+                          sectionTagTargets={visibleSectionTagTargets}
+                          locked={sectionLocked}
+                          proposeMode={proposeMode}
+                          canReview={canReview}
+                          readOnlyMember={readOnlyMember}
+                          canDrag={canReorderSections}
+                          reopenDraft={
+                            reopenDraft?.sectionId === section.id
+                              ? reopenDraft.content
+                              : null
+                          }
+                          onReopenConsumed={() => setReopenDraft(null)}
+                          onSubmitProposal={(content) =>
+                            fileProposalEdit(section.id, content)
+                          }
+                          globalLocked={state.locked}
+                          onToggleLock={() => toggleSectionLock(section.id)}
+                          quality={quality}
+                          qualityLoading={qualitySectionLoading === section.id}
+                          qualityDirty={
+                            qualityEnabled &&
+                            canSeeQuality &&
+                            // Members can only refresh sections they have propose or direct access to.
+                            (state.creedType !== "company" ||
+                              canProposeToSection(myPerm)) &&
+                            (!quality ||
+                              !analyzedFingerprint ||
+                              analyzedFingerprint !== currentFingerprint)
+                          }
+                          onRefreshQuality={() =>
+                            void refreshSectionQuality(section)
+                          }
+                          proposals={normalizedPendingProposals.filter(
+                            (item) => item.sectionId === section.id,
+                          )}
+                          onAcceptProposal={(id) => {
+                            void acceptProposal(id);
+                          }}
+                          onRejectProposal={(id) => {
+                            rejectProposal(id);
+                          }}
+                          onWithdrawProposal={(id) => {
+                            withdrawProposal(id);
+                          }}
+                          onChangeRichText={(content) => {
+                            updateRichTextSection(section.id, content);
+                          }}
+                          onRename={() =>
+                            setRenameSectionState({
                               id: section.id,
                               name: section.name,
-                            }),
-                          0,
-                        )
-                      }
-                      onArchive={
-                        canArchiveSection
-                          ? () => {
-                              archiveSection(section.id);
-                              toast.success(`Archived "${section.name}"`);
-                            }
-                          : undefined
-                      }
-                      onAddSectionAfter={
-                        canCreateSections
-                          ? () => openComposerAndReveal(section.id)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-              </Reorder.Group>
-
-              {visibleSections.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-[var(--radius-xl)] border border-dashed border-[var(--creed-border)] px-4 py-16 text-center">
-                  <div className="text-[15px] font-medium text-[var(--creed-text-primary)]">
-                    Every section is archived
-                  </div>
-                  <div className="max-w-sm text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-                    Restore a section from Settings, under Archived, to bring it
-                    back into your Creed.
-                  </div>
-                </div>
-              ) : null}
-
-              {normalizedPendingProposals.filter(
-                (p) => p.draft.kind === "new-section",
-              ).length > 0 ? (
-                <div className="mt-10 space-y-3 md:mt-16">
-                  {normalizedPendingProposals
-                    .filter((p) => p.draft.kind === "new-section")
-                    .map((p) => (
-                      <div key={p.id} data-proposal-id={p.id}>
-                        <InlineNewSectionProposal
-                          proposal={p}
-                          agentName={p.agentName}
-                          onAccept={() => {
-                            void acceptProposal(p.id);
-                          }}
-                          onReject={() => {
-                            rejectProposal(p.id);
-                          }}
-                        />
-                      </div>
-                    ))}
-                </div>
-              ) : null}
-
-              {canCreateSections ? (
-                <div ref={composerAreaRef} className="mt-10 md:mt-16">
-                  {composerOpen ? (
-                    <motion.div
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      className="rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-4 sm:p-5"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-[13px] font-medium text-[var(--creed-text-primary)]">
-                            New section
-                          </div>
-                          <div className="mt-0.5 hidden text-[12px] text-[var(--creed-text-secondary)] sm:block">
-                            Pick a starter or name your own.
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="rounded-md"
-                          onClick={() => setComposerOpen(false)}
-                          aria-label="Close composer"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      <Input
-                        ref={inputRef}
-                        value={composerName}
-                        onChange={(event) =>
-                          setComposerName(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            submitComposer();
+                            })
                           }
-                        }}
-                        placeholder="Section name..."
-                        className="mt-4 h-10 rounded-md border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[14px]"
-                      />
+                          onCopy={() => {
+                            void navigator.clipboard.writeText(
+                              sectionToMarkdown(section).trim(),
+                            );
+                          }}
+                          onSetAccent={(accent) =>
+                            setSectionAccent(section.id, accent)
+                          }
+                          onDelete={() =>
+                            // Defer so the section menu closes before the dialog
+                            // opens, letting the dialog play its enter animation.
+                            window.setTimeout(
+                              () =>
+                                setDeleteSectionState({
+                                  id: section.id,
+                                  name: section.name,
+                                }),
+                              0,
+                            )
+                          }
+                          onArchive={
+                            canArchiveSection
+                              ? () => {
+                                  archiveSection(section.id);
+                                  toast.success(`Archived "${section.name}"`);
+                                }
+                              : undefined
+                          }
+                          onAddSectionAfter={
+                            canCreateSections
+                              ? () => openComposerAndReveal(section.id)
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </Reorder.Group>
 
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {sectionSuggestions.map((suggestion) => (
-                          <button
-                            key={suggestion.name}
-                            type="button"
-                            onClick={() => {
-                              setComposerName(suggestion.name);
-                              setComposerStarter(suggestion.starter);
-                              if (!insertAfterId) {
-                                addSection(suggestion.name, suggestion.starter);
-                              } else {
-                                addSectionAfter(
-                                  insertAfterId,
-                                  suggestion.name,
-                                  suggestion.starter,
-                                );
-                              }
-                              setComposerOpen(false);
-                              setInsertAfterId(null);
-                            }}
-                            className="rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                          >
-                            {suggestion.name}
-                          </button>
+                  {visibleSections.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-2 rounded-[var(--radius-xl)] border border-dashed border-[var(--creed-border)] px-4 py-16 text-center">
+                      <div className="text-[15px] font-medium text-[var(--creed-text-primary)]">
+                        Every section is archived
+                      </div>
+                      <div className="max-w-sm text-[13px] leading-6 text-[var(--creed-text-secondary)]">
+                        Restore a section from Settings, under Archived, to
+                        bring it back into your Creed.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {normalizedPendingProposals.filter(
+                    (p) => p.draft.kind === "new-section",
+                  ).length > 0 ? (
+                    <div className="mt-10 space-y-3 md:mt-16">
+                      {normalizedPendingProposals
+                        .filter((p) => p.draft.kind === "new-section")
+                        .map((p) => (
+                          <div key={p.id} data-proposal-id={p.id}>
+                            <InlineNewSectionProposal
+                              proposal={p}
+                              agentName={p.agentName}
+                              onAccept={() => {
+                                void acceptProposal(p.id);
+                              }}
+                              onReject={() => {
+                                rejectProposal(p.id);
+                              }}
+                            />
+                          </div>
                         ))}
-                      </div>
+                    </div>
+                  ) : null}
 
-                      <div className="mt-4 flex items-center justify-between gap-2">
-                        <Button
-                          variant="ghost"
-                          className="rounded-md text-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                          onClick={() => setComposerOpen(false)}
+                  {canCreateSections ? (
+                    <div ref={composerAreaRef} className="mt-10 md:mt-16">
+                      {composerOpen ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.18,
+                            ease: [0.22, 1, 0.36, 1],
+                          }}
+                          className="rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-4 sm:p-5"
                         >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={submitComposer}
-                          className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-medium text-[var(--creed-text-primary)]">
+                                New section
+                              </div>
+                              <div className="mt-0.5 hidden text-[12px] text-[var(--creed-text-secondary)] sm:block">
+                                Pick a starter or name your own.
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-md"
+                              onClick={() => setComposerOpen(false)}
+                              aria-label="Close composer"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <Input
+                            ref={inputRef}
+                            value={composerName}
+                            onChange={(event) =>
+                              setComposerName(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                submitComposer();
+                              }
+                            }}
+                            placeholder="Section name..."
+                            className="mt-4 h-10 rounded-md border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[14px]"
+                          />
+
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {sectionSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.name}
+                                type="button"
+                                onClick={() => {
+                                  setComposerName(suggestion.name);
+                                  setComposerStarter(suggestion.starter);
+                                  if (!insertAfterId) {
+                                    addSection(
+                                      suggestion.name,
+                                      suggestion.starter,
+                                    );
+                                  } else {
+                                    addSectionAfter(
+                                      insertAfterId,
+                                      suggestion.name,
+                                      suggestion.starter,
+                                    );
+                                  }
+                                  setComposerOpen(false);
+                                  setInsertAfterId(null);
+                                }}
+                                className="rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                              >
+                                {suggestion.name}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-2">
+                            <Button
+                              variant="ghost"
+                              className="rounded-md text-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
+                              onClick={() => setComposerOpen(false)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              onClick={submitComposer}
+                              className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                            >
+                              Create
+                            </Button>
+                          </div>
+                        </motion.div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openComposerAndReveal()}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--creed-border-strong)] bg-[var(--creed-surface)] px-4 py-3.5 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:border-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
                         >
-                          Create
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openComposerAndReveal()}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--creed-border-strong)] bg-[var(--creed-surface)] px-4 py-3.5 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:border-[var(--creed-text-secondary)] hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add section
-                    </button>
-                  )}
-                </div>
-              ) : null}
+                          <Plus className="h-3.5 w-3.5" />
+                          Add section
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2978,6 +3173,7 @@ export function FileScreen() {
 
 function SectionCard({
   section,
+  sectionTagTargets,
   locked,
   proposeMode = false,
   canReview = true,
@@ -3005,6 +3201,7 @@ function SectionCard({
   onAddSectionAfter,
 }: {
   section: CreedSection;
+  sectionTagTargets: Array<{ id: string; name: string; accent?: AccentKey }>;
   locked: boolean;
   // Company Proposal-only: edits are buffered locally and submitted as a
   // proposal via the header button, instead of autosaving.
@@ -3422,6 +3619,7 @@ function SectionCard({
                   }
                   readOnly={locked}
                   accentColor={accentColorMap[section.accent]}
+                  sectionTagTargets={sectionTagTargets}
                   onChange={
                     proposeMode
                       ? (html) =>
@@ -3865,7 +4063,9 @@ function ActivityRail({
             <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-[13px] text-[var(--creed-text-tertiary)]">
               <HistoryIcon size={20} className="opacity-60" />
               <span className="font-medium opacity-60">
-                {creedType === "company" ? "Nothing here yet" : "No agent activity yet"}
+                {creedType === "company"
+                  ? "Nothing here yet"
+                  : "No agent activity yet"}
               </span>
             </div>
           )}

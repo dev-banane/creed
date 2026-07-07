@@ -25,7 +25,15 @@ test("rankMentionSections matches on a substring, space-insensitively", () => {
   const ranked = rankMentionSections(SECTIONS, "judgment");
   assert.deepEqual(
     ranked.map((section) => section.id),
-    ["pj"]
+    ["pj"],
+  );
+});
+
+test("rankMentionSections matches multi-word names without caring about separators", () => {
+  const ranked = rankMentionSections(SECTIONS, "product_judg");
+  assert.deepEqual(
+    ranked.map((section) => section.id),
+    ["pj"],
   );
 });
 

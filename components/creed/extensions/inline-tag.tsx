@@ -1,18 +1,51 @@
 "use client";
 
-import { getMarkRange, InputRule, Mark, mergeAttributes } from "@tiptap/core";
+import { getMarkRange, Mark, mergeAttributes } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 
-const PLACEHOLDER = "tag";
+export type SectionTagTarget = {
+  id: string;
+  name: string;
+  accent?: string;
+};
+
+function normalizeTagValue(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^#/, "")
+    .replace(/[\s_-]+/g, "");
+}
+
+function findSectionTagTarget(
+  rawValue: string,
+  targets: SectionTagTarget[],
+) {
+  const normalized = normalizeTagValue(rawValue);
+  if (!normalized) return null;
+
+  return (
+    targets.find(
+      (target) =>
+        normalizeTagValue(target.id) === normalized ||
+        normalizeTagValue(target.name) === normalized,
+    ) ?? null
+  );
+}
 
 // Inline tag mark - renders as <span class="creed-inline-tag" data-tag="value">.
-// Used to embed Obsidian-style #tags inline in any rich-text paragraph.
+// Used for section references only. Freeform hashtags stay plain text.
 export const InlineTagMark = Mark.create({
   name: "creedInlineTag",
-  // Inclusive so typing over the selected placeholder (or at the end of the
-  // mark) keeps extending the tag rather than dropping back to plain text.
-  inclusive: true,
+  inclusive: false,
   spanning: false,
+
+  addOptions() {
+    return {
+      targets: [] as SectionTagTarget[],
+      getTargets: null as (() => SectionTagTarget[]) | null,
+    };
+  },
 
   addAttributes() {
     return {
@@ -48,36 +81,10 @@ export const InlineTagMark = Mark.create({
     ];
   },
 
-  // Type `#` at a word boundary → start an inline tag pill with a selected
-  // "tag" placeholder. Typing replaces it; the mark stays on the new text
-  // (inclusive: true) so users see a styled tag the moment they start one.
-  addInputRules() {
-    return [
-      new InputRule({
-        find: /(^|\s)#$/,
-        handler: ({ range, match, chain }) => {
-          const lead = match[1] ?? "";
-          const hashStart = range.from + lead.length;
-          const hashEnd = hashStart + 1;
-          chain()
-            .deleteRange({ from: hashStart, to: hashEnd })
-            .insertContentAt(hashStart, {
-              type: "text",
-              text: PLACEHOLDER,
-              marks: [{ type: this.name, attrs: { value: PLACEHOLDER } }],
-            })
-            .setTextSelection({ from: hashStart, to: hashStart + PLACEHOLDER.length })
-            .run();
-        },
-      }),
-    ];
-  },
-
-  // Pressing Space at the end of an inline tag exits it: the trailing space
-  // is inserted without the mark, and the mark's data-tag attribute is
-  // synced to the current text content so it persists correctly.
   addProseMirrorPlugins() {
     const markName = this.name;
+    const getTargets = this.options.getTargets;
+    const targets = this.options.targets;
     return [
       new Plugin({
         key: new PluginKey("creedInlineTagExit"),
@@ -94,6 +101,38 @@ export const InlineTagMark = Mark.create({
             const markType = schema.marks[markName];
             if (!markType) return false;
             const $pos = selection.$from;
+
+            if (isSpace && !markType.isInSet($pos.marks())) {
+              const textBeforeCursor = $pos.parent.textBetween(0, $pos.parentOffset, "", "");
+              const match = textBeforeCursor.match(/(^|\s)#([A-Za-z0-9_-]+)$/);
+              if (!match) return false;
+
+              const target = findSectionTagTarget(
+                match[2] ?? "",
+                getTargets?.() ?? targets,
+              );
+              if (!target) return false;
+
+              const leadLength = match[1]?.length ?? 0;
+              const tokenLength = match[0].length - leadLength;
+              const from = $pos.pos - tokenLength;
+              const to = $pos.pos;
+              const tr = state.tr;
+              tr.replaceWith(
+                from,
+                to,
+                schema.text(target.name, [
+                  markType.create({ value: target.id }),
+                ]),
+              );
+              tr.insertText(" ", from + target.name.length);
+              tr.setSelection(TextSelection.create(tr.doc, from + target.name.length + 1));
+              tr.setStoredMarks([]);
+              view.dispatch(tr);
+              event.preventDefault();
+              return true;
+            }
+
             if (!markType.isInSet($pos.marks())) return false;
 
             const range = getMarkRange($pos, markType);

@@ -1,7 +1,15 @@
 "use client";
 
 import type { ComponentType, CSSProperties, ReactNode } from "react";
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { Extension, type Editor, type Range } from "@tiptap/core";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -10,6 +18,7 @@ import { common, createLowlight } from "lowlight";
 import Suggestion, {
   exitSuggestion,
   type SuggestionKeyDownProps,
+  type SuggestionMatch,
   type SuggestionProps,
 } from "@tiptap/suggestion";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -29,9 +38,18 @@ import {
   Pilcrow,
   PlusSquare,
   Strikethrough,
-  Tag,
 } from "lucide-react";
-import { InlineTagMark } from "@/components/creed/extensions/inline-tag";
+import {
+  InlineTagMark,
+  type SectionTagTarget,
+} from "@/components/creed/extensions/inline-tag";
+import {
+  SECTION_REFERENCE_PICKER_GAP,
+  SECTION_REFERENCE_PICKER_MAX_ROWS,
+  SECTION_REFERENCE_PICKER_PADDING,
+  SECTION_REFERENCE_PICKER_ROW_HEIGHT,
+  SectionReferencePicker,
+} from "@/components/creed/section-reference-picker";
 import {
   Dialog,
   DialogContent,
@@ -42,9 +60,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { rankMentionSections } from "@/lib/panel/mentions";
 import { cn } from "@/lib/utils";
 
 const slashPluginKey = new PluginKey("creedSlashCommand");
+const sectionTagPluginKey = new PluginKey("creedSectionTag");
+const sectionTagRefocusMetaKey = "creedSectionTagRefocus";
 
 // Pre-bundled curated language set: js/ts/jsx/tsx, python, ruby, go, rust,
 // java, c/cpp, cs, php, swift, kotlin, json, yaml, bash, sql, html, css,
@@ -68,6 +89,16 @@ type SlashMenuState = {
   bottomOffset?: number;
 };
 
+type SectionTagMenuState = {
+  query: string;
+  items: SectionTagTarget[];
+  x: number;
+  placeAbove: boolean;
+  top?: number;
+  bottomOffset?: number;
+  width: number;
+};
+
 type SelectionToolbarState = {
   // Viewport-relative position; toolbar is rendered with `position: fixed` so
   // it isn't affected by parent transforms or scroll containers.
@@ -83,6 +114,7 @@ type RichTextEditorProps = {
   readOnly?: boolean;
   placeholder?: string;
   accentColor?: string;
+  sectionTagTargets?: SectionTagTarget[];
   density?: "default" | "continuation";
   onChange: (content: string) => void;
   onAddSectionAfter?: () => void;
@@ -119,12 +151,16 @@ function insertContentAndSelect(
   range: Range,
   content: Parameters<Editor["commands"]["insertContentAt"]>[1],
   selectionOffset: number,
-  replaceBlock = false
+  replaceBlock = false,
 ) {
   const targetRange = replaceBlock
     ? {
-        from: editor.state.selection.$from.before(editor.state.selection.$from.depth),
-        to: editor.state.selection.$from.after(editor.state.selection.$from.depth),
+        from: editor.state.selection.$from.before(
+          editor.state.selection.$from.depth,
+        ),
+        to: editor.state.selection.$from.after(
+          editor.state.selection.$from.depth,
+        ),
       }
     : range;
 
@@ -143,11 +179,105 @@ function matchesSlashCommand(command: SlashCommand, query: string) {
     return true;
   }
 
-  const haystack = [command.title, command.description, ...(command.keywords ?? [])]
+  const haystack = [
+    command.title,
+    command.description,
+    ...(command.keywords ?? []),
+  ]
     .join(" ")
     .toLowerCase();
 
   return haystack.includes(normalizedQuery);
+}
+
+function normalizeSectionReferenceTags(
+  html: string,
+  targets: SectionTagTarget[],
+) {
+  if (typeof window === "undefined" || !html.includes("creed-inline-tag")) {
+    return html;
+  }
+
+  const parser = new DOMParser();
+  const document = parser.parseFromString(`<div>${html}</div>`, "text/html");
+  const root = document.body.firstElementChild;
+  if (!root) return html;
+
+  const targetByNormalized = new Map<string, SectionTagTarget>();
+  for (const target of targets) {
+    const names = [target.id, target.name];
+    for (const name of names) {
+      targetByNormalized.set(
+        name
+          .trim()
+          .toLowerCase()
+          .replace(/^#/, "")
+          .replace(/[\s_-]+/g, ""),
+        target,
+      );
+    }
+  }
+
+  root
+    .querySelectorAll<HTMLElement>("span.creed-inline-tag")
+    .forEach((node) => {
+      const rawValue = node.getAttribute("data-tag") ?? node.textContent ?? "";
+      const normalized = rawValue
+        .trim()
+        .toLowerCase()
+        .replace(/^#/, "")
+        .replace(/[\s_-]+/g, "");
+      const target = targetByNormalized.get(normalized);
+
+      if (!target) {
+        const fallbackText = (node.textContent?.trim() || rawValue).replace(
+          /^#+/,
+          "",
+        );
+        node.replaceWith(document.createTextNode(`#${fallbackText}`));
+        return;
+      }
+
+      node.setAttribute("data-tag", target.id);
+      node.textContent = target.name;
+    });
+
+  return root.innerHTML;
+}
+
+function findSectionTagSuggestionMatch({
+  $position,
+}: {
+  $position: Parameters<
+    NonNullable<Parameters<typeof Suggestion>[0]["findSuggestionMatch"]>
+  >[0]["$position"];
+}): SuggestionMatch {
+  const textBeforeCursor = $position.parent.textBetween(
+    0,
+    $position.parentOffset,
+    "",
+    "",
+  );
+  const match = /(^|\s)#([A-Za-z0-9 _-]*)$/.exec(textBeforeCursor);
+
+  if (!match || match.index === undefined) {
+    return null;
+  }
+
+  const prefixLength = match[1]?.length ?? 0;
+  const text = match[0].slice(prefixLength);
+  const from = $position.pos - text.length;
+  const to = $position.pos;
+
+  if (from < $position.pos && to >= $position.pos) {
+    return {
+      range: { from, to },
+      query: text.slice(1),
+      text,
+    };
+  }
+
+  return null;
 }
 
 export function RichTextEditor({
@@ -156,6 +286,7 @@ export function RichTextEditor({
   readOnly = false,
   placeholder = "Write something useful for your future agents.",
   accentColor = "#6B7280",
+  sectionTagTargets = [],
   density = "default",
   onChange,
   onAddSectionAfter,
@@ -167,11 +298,26 @@ export function RichTextEditor({
   // serializes the entire ProseMirror doc twice.
   const lastEmittedHtmlRef = useRef<string | null>(content);
   const slashItemsRef = useRef<SlashCommand[]>([]);
+  const sectionTagItemsRef = useRef<SectionTagTarget[]>([]);
+  const sectionTagTargetsRef = useRef<SectionTagTarget[]>(sectionTagTargets);
+  const sectionTagQueryRef = useRef("");
+  const sectionTagSuggestionRef = useRef<SuggestionProps<
+    SectionTagTarget,
+    SectionTagTarget
+  > | null>(null);
   const slashIndexRef = useRef(0);
+  const sectionTagIndexRef = useRef(0);
   const slashSelectRef = useRef<((item: SlashCommand) => void) | null>(null);
+  const sectionTagSelectRef = useRef<((item: SectionTagTarget) => void) | null>(
+    null,
+  );
   const [slashState, setSlashState] = useState<SlashMenuState | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
-  const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null);
+  const [sectionTagState, setSectionTagState] =
+    useState<SectionTagMenuState | null>(null);
+  const [sectionTagIndex, setSectionTagIndex] = useState(0);
+  const [selectionToolbar, setSelectionToolbar] =
+    useState<SelectionToolbarState | null>(null);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
   const editorThemeStyle = useMemo(
@@ -182,8 +328,12 @@ export function RichTextEditor({
         "--section-accent-border": withAlpha(accentColor, 0.12),
         "--section-accent-bar": withAlpha(accentColor, 0.82),
       }) as CSSProperties,
-    [accentColor]
+    [accentColor],
   );
+
+  useEffect(() => {
+    sectionTagTargetsRef.current = sectionTagTargets;
+  }, [sectionTagTargets]);
 
   const commands = useMemo<SlashCommand[]>(
     () => [
@@ -205,7 +355,10 @@ export function RichTextEditor({
             .deleteRange(range)
             .setParagraph()
             .insertContent(placeholder)
-            .setTextSelection({ from: startPos, to: startPos + placeholder.length })
+            .setTextSelection({
+              from: startPos,
+              to: startPos + placeholder.length,
+            })
             .run();
         },
       },
@@ -215,7 +368,12 @@ export function RichTextEditor({
         icon: Heading2,
         keywords: ["heading", "title", "h2"],
         run: (editor, range) =>
-          editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run(),
+          editor
+            .chain()
+            .focus()
+            .deleteRange(range)
+            .setHeading({ level: 2 })
+            .run(),
       },
       {
         title: "Heading 3",
@@ -223,7 +381,12 @@ export function RichTextEditor({
         icon: Heading3,
         keywords: ["heading", "subtitle", "h3"],
         run: (editor, range) =>
-          editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run(),
+          editor
+            .chain()
+            .focus()
+            .deleteRange(range)
+            .setHeading({ level: 3 })
+            .run(),
       },
       {
         title: "Bullet list",
@@ -242,32 +405,6 @@ export function RichTextEditor({
           editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
       },
       {
-        title: "Tag",
-        description: "Inline tag",
-        icon: Tag,
-        keywords: ["tag", "chip", "label", "hashtag"],
-        run: (editor, range) => {
-          // Insert a styled placeholder pill with "tag" selected; typing
-          // replaces it and inherits the mark (inclusive: true), so the
-          // result looks identical whether you used /tag or typed `#`.
-          const placeholder = "tag";
-          editor
-            .chain()
-            .focus()
-            .deleteRange(range)
-            .insertContent({
-              type: "text",
-              text: placeholder,
-              marks: [{ type: "creedInlineTag", attrs: { value: placeholder } }],
-            })
-            .setTextSelection({
-              from: range.from,
-              to: range.from + placeholder.length,
-            })
-            .run();
-        },
-      },
-      {
         title: "Code block",
         description: "Monospace block",
         icon: Code2,
@@ -283,7 +420,7 @@ export function RichTextEditor({
               attrs: { language: null },
             },
             1,
-            true
+            true,
           ),
       },
       {
@@ -300,7 +437,7 @@ export function RichTextEditor({
               content: [{ type: "paragraph" }],
             },
             2,
-            true
+            true,
           ),
       },
       {
@@ -314,7 +451,7 @@ export function RichTextEditor({
             range,
             [{ type: "horizontalRule" }, { type: "paragraph" }],
             2,
-            true
+            true,
           ),
       },
       {
@@ -328,7 +465,15 @@ export function RichTextEditor({
         },
       },
     ],
-    [onAddSectionAfter]
+    [onAddSectionAfter],
+  );
+
+  const inlineTagExtension = useMemo(
+    () =>
+      InlineTagMark.configure({
+        getTargets: () => sectionTagTargetsRef.current,
+      }),
+    [],
   );
 
   // We mirror the slash items + active index into refs *synchronously*
@@ -344,43 +489,53 @@ export function RichTextEditor({
     slashIndexRef.current = slashIndex;
   }, [slashIndex]);
 
+  useEffect(() => {
+    sectionTagIndexRef.current = sectionTagIndex;
+  }, [sectionTagIndex]);
+
   const updateSlashMenu = useCallback(
     (props: SuggestionProps<SlashCommand, SlashCommand>) => {
-    // Keep the ref in sync as the items themselves change - synchronous
-    // update before the state setter so handleSlashKeyDown sees the fresh
-    // list even if Enter fires inside the same tick.
-    slashItemsRef.current = props.items;
-    if (readOnly || !containerRef.current || !props.clientRect) {
-      setSlashState(null);
-      return;
-    }
+      // Keep the ref in sync as the items themselves change - synchronous
+      // update before the state setter so handleSlashKeyDown sees the fresh
+      // list even if Enter fires inside the same tick.
+      slashItemsRef.current = props.items;
+      if (readOnly || !containerRef.current || !props.clientRect) {
+        setSlashState(null);
+        return;
+      }
 
-    const clientRect = props.clientRect();
-    const containerRect = containerRef.current.getBoundingClientRect();
+      const clientRect = props.clientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
 
-    if (!clientRect) {
-      setSlashState(null);
-      return;
-    }
+      if (!clientRect) {
+        setSlashState(null);
+        return;
+      }
 
-    const estimatedMenuHeight = Math.min((Math.max(props.items.length, 1) * 64) + 56, 420);
-    const viewportBottomSpace = window.innerHeight - clientRect.bottom;
-    const placeAbove = viewportBottomSpace < estimatedMenuHeight + 24;
+      const estimatedMenuHeight = Math.min(
+        Math.max(props.items.length, 1) * 64 + 56,
+        420,
+      );
+      const viewportBottomSpace = window.innerHeight - clientRect.bottom;
+      const placeAbove = viewportBottomSpace < estimatedMenuHeight + 24;
 
-    setSlashState({
-      query: props.query,
-      items: props.items,
-      x: clientRect.left - containerRect.left,
-      y: placeAbove
-        ? clientRect.top - containerRect.top - 10
-        : clientRect.bottom - containerRect.top + 10,
-      placeAbove,
-      bottomOffset: placeAbove
-        ? Math.max(containerRect.height - (clientRect.top - containerRect.top - 10), 0)
-        : undefined,
-    });
+      setSlashState({
+        query: props.query,
+        items: props.items,
+        x: clientRect.left - containerRect.left,
+        y: placeAbove
+          ? clientRect.top - containerRect.top - 10
+          : clientRect.bottom - containerRect.top + 10,
+        placeAbove,
+        bottomOffset: placeAbove
+          ? Math.max(
+              containerRect.height - (clientRect.top - containerRect.top - 10),
+              0,
+            )
+          : undefined,
+      });
     },
-    [readOnly]
+    [readOnly],
   );
 
   function handleSlashKeyDown({ event, view }: SuggestionKeyDownProps) {
@@ -403,7 +558,9 @@ export function RichTextEditor({
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setSlashIndex((current) => (current === 0 ? items.length - 1 : current - 1));
+      setSlashIndex((current) =>
+        current === 0 ? items.length - 1 : current - 1,
+      );
       return true;
     }
 
@@ -434,6 +591,143 @@ export function RichTextEditor({
     slashSelectRef.current?.(item);
   }
 
+  const updateSectionTagMenu = useCallback(
+    (props: SuggestionProps<SectionTagTarget, SectionTagTarget>) => {
+      sectionTagSuggestionRef.current = props;
+      sectionTagItemsRef.current = props.items;
+      if (readOnly || !containerRef.current || !props.clientRect) {
+        setSectionTagState(null);
+        return;
+      }
+
+      const clientRect = props.clientRect();
+      if (!clientRect) {
+        setSectionTagState(null);
+        return;
+      }
+      if (
+        clientRect.bottom < 0 ||
+        clientRect.top > window.innerHeight ||
+        clientRect.right < 0 ||
+        clientRect.left > window.innerWidth
+      ) {
+        setSectionTagState(null);
+        return;
+      }
+
+      const estimatedMenuHeight =
+        Math.min(
+          Math.max(props.items.length, 1),
+          SECTION_REFERENCE_PICKER_MAX_ROWS,
+        ) *
+          SECTION_REFERENCE_PICKER_ROW_HEIGHT +
+        SECTION_REFERENCE_PICKER_PADDING;
+      const viewportBottomSpace = window.innerHeight - clientRect.bottom;
+      const placeAbove = viewportBottomSpace < estimatedMenuHeight + 24;
+      const pickerWidth = 240;
+      const left = Math.max(
+        8,
+        Math.min(clientRect.left, window.innerWidth - pickerWidth - 8),
+      );
+
+      setSectionTagState({
+        query: props.query,
+        items: props.items,
+        x: left,
+        placeAbove,
+        top: placeAbove
+          ? undefined
+          : clientRect.bottom + SECTION_REFERENCE_PICKER_GAP,
+        bottomOffset: placeAbove
+          ? Math.max(
+              window.innerHeight -
+                clientRect.top +
+                SECTION_REFERENCE_PICKER_GAP,
+              0,
+            )
+          : undefined,
+        width: pickerWidth,
+      });
+      sectionTagQueryRef.current = props.query;
+    },
+    [readOnly],
+  );
+
+  useEffect(() => {
+    if (!sectionTagState) return;
+
+    function repositionSectionTagMenu() {
+      const props = sectionTagSuggestionRef.current;
+      if (!props) {
+        setSectionTagState(null);
+        return;
+      }
+      updateSectionTagMenu(props);
+    }
+
+    window.addEventListener("scroll", repositionSectionTagMenu, true);
+    window.addEventListener("resize", repositionSectionTagMenu);
+    return () => {
+      window.removeEventListener("scroll", repositionSectionTagMenu, true);
+      window.removeEventListener("resize", repositionSectionTagMenu);
+    };
+  }, [sectionTagState, updateSectionTagMenu]);
+
+  function handleSectionTagKeyDown({ event, view }: SuggestionKeyDownProps) {
+    const items = sectionTagItemsRef.current;
+
+    if (!items.length) {
+      if (event.key === "Escape") {
+        exitSuggestion(view, sectionTagPluginKey);
+        return true;
+      }
+
+      return false;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSectionTagIndex((current) => (current + 1) % items.length);
+      return true;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSectionTagIndex((current) =>
+        current === 0 ? items.length - 1 : current - 1,
+      );
+      return true;
+    }
+
+    if (
+      event.key === "Enter" ||
+      event.key === "Tab" ||
+      (event.key === " " && sectionTagQueryRef.current.trim())
+    ) {
+      event.preventDefault();
+      const safeIndex = Math.min(sectionTagIndexRef.current, items.length - 1);
+      const item = items[Math.max(safeIndex, 0)];
+
+      if (item) {
+        sectionTagSelectRef.current?.(item);
+      }
+
+      return true;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      exitSuggestion(view, sectionTagPluginKey);
+      return true;
+    }
+
+    return false;
+  }
+
+  function selectSectionTagItem(item: SectionTagTarget) {
+    sectionTagSelectRef.current?.(item);
+  }
+
   const slashCommandExtension = useMemo(
     () =>
       Extension.create({
@@ -447,7 +741,9 @@ export function RichTextEditor({
               allowSpaces: true,
               startOfLine: true,
               items: ({ query }) =>
-                commands.filter((command) => matchesSlashCommand(command, query)),
+                commands.filter((command) =>
+                  matchesSlashCommand(command, query),
+                ),
               command: ({ editor, range, props }) => {
                 props.run(editor, range);
               },
@@ -460,7 +756,9 @@ export function RichTextEditor({
                 onUpdate: (props) => {
                   slashSelectRef.current = props.command;
                   setSlashIndex((current) =>
-                    props.items.length === 0 ? 0 : Math.min(current, props.items.length - 1)
+                    props.items.length === 0
+                      ? 0
+                      : Math.min(current, props.items.length - 1),
                   );
                   updateSlashMenu(props);
                 },
@@ -475,7 +773,80 @@ export function RichTextEditor({
           ];
         },
       }),
-    [commands, updateSlashMenu]
+    [commands, updateSlashMenu],
+  );
+
+  const sectionTagExtension = useMemo(
+    () =>
+      Extension.create({
+        name: "section-tag-suggestion",
+        addProseMirrorPlugins() {
+          return [
+            Suggestion<SectionTagTarget, SectionTagTarget>({
+              editor: this.editor,
+              pluginKey: sectionTagPluginKey,
+              char: "#",
+              allowSpaces: true,
+              allowedPrefixes: null,
+              findSuggestionMatch: findSectionTagSuggestionMatch,
+              shouldResetDismissed: ({ transaction }) =>
+                transaction.selectionSet ||
+                Boolean(transaction.getMeta(sectionTagRefocusMetaKey)),
+              items: ({ query }) =>
+                rankMentionSections(sectionTagTargetsRef.current, query),
+              command: ({ editor, range, props }) => {
+                editor
+                  .chain()
+                  .focus()
+                  .insertContentAt(
+                    range,
+                    [
+                      {
+                        type: "text",
+                        text: props.name,
+                        marks: [
+                          {
+                            type: "creedInlineTag",
+                            attrs: { value: props.id },
+                          },
+                        ],
+                      },
+                      { type: "text", text: " " },
+                    ],
+                    { updateSelection: false },
+                  )
+                  .setTextSelection(range.from + props.name.length + 1)
+                  .run();
+              },
+              render: () => ({
+                onStart: (props) => {
+                  sectionTagSelectRef.current = props.command;
+                  setSectionTagIndex(0);
+                  updateSectionTagMenu(props);
+                },
+                onUpdate: (props) => {
+                  sectionTagSelectRef.current = props.command;
+                  setSectionTagIndex((current) =>
+                    props.items.length === 0
+                      ? 0
+                      : Math.min(current, props.items.length - 1),
+                  );
+                  updateSectionTagMenu(props);
+                },
+                onKeyDown: (props) => handleSectionTagKeyDown(props),
+                onExit: () => {
+                  sectionTagSelectRef.current = null;
+                  sectionTagSuggestionRef.current = null;
+                  sectionTagQueryRef.current = "";
+                  setSectionTagIndex(0);
+                  setSectionTagState(null);
+                },
+              }),
+            }),
+          ];
+        },
+      }),
+    [updateSectionTagMenu],
   );
 
   const editor = useEditor({
@@ -525,8 +896,9 @@ export function RichTextEditor({
       Placeholder.configure({
         placeholder,
       }),
-      InlineTagMark,
+      inlineTagExtension,
       slashCommandExtension,
+      sectionTagExtension,
     ],
     content,
     editorProps: {
@@ -544,7 +916,10 @@ export function RichTextEditor({
         const { state } = view;
         const { selection } = state;
 
-        if (selection instanceof NodeSelection && selection.node.type.name === "horizontalRule") {
+        if (
+          selection instanceof NodeSelection &&
+          selection.node.type.name === "horizontalRule"
+        ) {
           event.preventDefault();
           view.dispatch(state.tr.deleteSelection().scrollIntoView());
           return true;
@@ -556,7 +931,11 @@ export function RichTextEditor({
 
         const { $from } = selection;
 
-        if ($from.depth === 0 || $from.parentOffset !== 0 || !$from.parent.isTextblock) {
+        if (
+          $from.depth === 0 ||
+          $from.parentOffset !== 0 ||
+          !$from.parent.isTextblock
+        ) {
           return false;
         }
 
@@ -579,13 +958,21 @@ export function RichTextEditor({
 
         event.preventDefault();
         view.dispatch(
-          state.tr.delete(previousNodeStart, previousNodeStart + previousNode.nodeSize).scrollIntoView()
+          state.tr
+            .delete(
+              previousNodeStart,
+              previousNodeStart + previousNode.nodeSize,
+            )
+            .scrollIntoView(),
         );
         return true;
       },
     },
     onUpdate({ editor }) {
-      const html = editor.getHTML();
+      const html = normalizeSectionReferenceTags(
+        editor.getHTML(),
+        sectionTagTargetsRef.current,
+      );
       lastEmittedHtmlRef.current = html;
       // Push the parent state update into a transition so React doesn't block
       // the keystroke's paint on the resulting cascade of re-renders.
@@ -599,6 +986,81 @@ export function RichTextEditor({
       syncSelectionToolbar(editor);
     },
   });
+
+  const closeSectionTagMenu = useCallback(() => {
+    if (editor) {
+      exitSuggestion(editor.view, sectionTagPluginKey);
+    }
+    sectionTagSelectRef.current = null;
+    sectionTagSuggestionRef.current = null;
+    sectionTagQueryRef.current = "";
+    setSectionTagIndex(0);
+    setSectionTagState(null);
+  }, [editor]);
+
+  const refreshSectionTagMenu = useCallback(() => {
+    if (!editor || readOnly) return;
+    window.requestAnimationFrame(() => {
+      if (!editor.isFocused) return;
+      editor.view.dispatch(
+        editor.state.tr.setMeta(sectionTagRefocusMetaKey, true),
+      );
+    });
+  }, [editor, readOnly]);
+
+  useEffect(() => {
+    if (!sectionTagState) return;
+
+    function isInsideSectionTagSurface(target: EventTarget | null) {
+      if (!(target instanceof Node)) return false;
+      return Boolean(
+        containerRef.current?.contains(target) ||
+        (target instanceof Element &&
+          target.closest("[data-creed-section-tag-popup]")),
+      );
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      if (!isInsideSectionTagSurface(event.target)) {
+        closeSectionTagMenu();
+      }
+    }
+
+    function onFocusIn(event: FocusEvent) {
+      if (!isInsideSectionTagSurface(event.target)) {
+        closeSectionTagMenu();
+      }
+    }
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, [closeSectionTagMenu, sectionTagState]);
+
+  useEffect(() => {
+    if (!editor || readOnly) return;
+
+    function onPointerUp(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!containerRef.current?.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest("[data-creed-section-tag-popup]")
+      ) {
+        return;
+      }
+      refreshSectionTagMenu();
+    }
+
+    document.addEventListener("pointerup", onPointerUp, true);
+    return () => {
+      document.removeEventListener("pointerup", onPointerUp, true);
+    };
+  }, [editor, readOnly, refreshSectionTagMenu]);
 
   function syncSelectionToolbar(currentEditor: Editor) {
     if (readOnly) {
@@ -650,9 +1112,13 @@ export function RichTextEditor({
     // toolbar never crosses the viewport edge - the rendered element uses a
     // -50% translateX, so x is the centre point.
     const centreX = rect.left + rect.width / 2;
-    const placeBelow = rect.top - TOOLBAR_HEIGHT - SELECTION_GAP < VIEWPORT_PADDING;
+    const placeBelow =
+      rect.top - TOOLBAR_HEIGHT - SELECTION_GAP < VIEWPORT_PADDING;
     const y = placeBelow
-      ? Math.min(rect.bottom + SELECTION_GAP, VIEWPORT_HEIGHT - TOOLBAR_HEIGHT - VIEWPORT_PADDING)
+      ? Math.min(
+          rect.bottom + SELECTION_GAP,
+          VIEWPORT_HEIGHT - TOOLBAR_HEIGHT - VIEWPORT_PADDING,
+        )
       : Math.max(rect.top - SELECTION_GAP, VIEWPORT_PADDING + TOOLBAR_HEIGHT);
 
     // Clamp X so the toolbar stays fully on-screen even when the selection
@@ -661,11 +1127,16 @@ export function RichTextEditor({
     const HALF_WIDTH = 160;
     const x = Math.max(
       VIEWPORT_PADDING + HALF_WIDTH,
-      Math.min(centreX, VIEWPORT_WIDTH - VIEWPORT_PADDING - HALF_WIDTH)
+      Math.min(centreX, VIEWPORT_WIDTH - VIEWPORT_PADDING - HALF_WIDTH),
     );
 
     setSelectionToolbar((prev) => {
-      if (prev && prev.x === x && prev.y === y && prev.placeBelow === placeBelow) {
+      if (
+        prev &&
+        prev.x === x &&
+        prev.y === y &&
+        prev.placeBelow === placeBelow
+      ) {
         return prev;
       }
       return { x, y, placeBelow };
@@ -693,7 +1164,12 @@ export function RichTextEditor({
       return;
     }
 
-    editor.chain().focus().extendMarkRange("link").setLink({ href: linkDraft.trim() }).run();
+    editor
+      .chain()
+      .focus()
+      .extendMarkRange("link")
+      .setLink({ href: linkDraft.trim() })
+      .run();
     setLinkDialogOpen(false);
   }
 
@@ -720,36 +1196,48 @@ export function RichTextEditor({
   // the user clicks away (e.g. into a sidebar / dialog).
   useEffect(() => {
     if (!editor) return;
+    function onFocus() {
+      refreshSectionTagMenu();
+    }
+
     function onBlur() {
       // Defer one frame: clicking a toolbar button blurs the editor briefly,
       // we don't want to dismiss the toolbar before the click resolves.
       window.setTimeout(() => {
         if (editor && !editor.isFocused) {
           setSelectionToolbar(null);
+          closeSectionTagMenu();
         }
       }, 0);
     }
+    editor.on("focus", onFocus);
     editor.on("blur", onBlur);
     return () => {
+      editor.off("focus", onFocus);
       editor.off("blur", onBlur);
     };
-  }, [editor]);
+  }, [closeSectionTagMenu, editor, refreshSectionTagMenu]);
 
   useEffect(() => {
     if (!editor) {
       return;
     }
 
+    const normalizedContent = normalizeSectionReferenceTags(
+      content,
+      sectionTagTargetsRef.current,
+    );
+
     // Fast path: the parent re-rendered with the exact string we just emitted -
     // no need to serialize + diff the doc, definitely no need to setContent.
-    if (content === lastEmittedHtmlRef.current) {
+    if (normalizedContent === lastEmittedHtmlRef.current) {
       editor.setEditable(!readOnly);
       return;
     }
 
-    if (editor.getHTML() !== content) {
-      editor.commands.setContent(content, { emitUpdate: false });
-      lastEmittedHtmlRef.current = content;
+    if (editor.getHTML() !== normalizedContent) {
+      editor.commands.setContent(normalizedContent, { emitUpdate: false });
+      lastEmittedHtmlRef.current = normalizedContent;
     }
 
     editor.setEditable(!readOnly);
@@ -760,13 +1248,23 @@ export function RichTextEditor({
       <AnimatePresence>
         {editor && selectionToolbar && !readOnly ? (
           <motion.div
-            initial={{ opacity: 0, y: selectionToolbar.placeBelow ? -4 : 4, scale: 0.98 }}
+            initial={{
+              opacity: 0,
+              y: selectionToolbar.placeBelow ? -4 : 4,
+              scale: 0.98,
+            }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: selectionToolbar.placeBelow ? -4 : 4, scale: 0.98 }}
+            exit={{
+              opacity: 0,
+              y: selectionToolbar.placeBelow ? -4 : 4,
+              scale: 0.98,
+            }}
             transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
               "fixed z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-[var(--creed-border)] bg-[var(--creed-surface)] p-1 text-[var(--creed-text-primary)] shadow-[0_6px_20px_rgba(28,28,26,0.10)]",
-              selectionToolbar.placeBelow ? "translate-y-0" : "-translate-y-full"
+              selectionToolbar.placeBelow
+                ? "translate-y-0"
+                : "-translate-y-full",
             )}
             style={{ left: selectionToolbar.x, top: selectionToolbar.y }}
             onMouseDown={(event) => {
@@ -778,7 +1276,9 @@ export function RichTextEditor({
             <ToolbarButton
               active={editor.isActive("heading", { level: 2 })}
               disabled={editor.isActive("code") || editor.isActive("codeBlock")}
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              onClick={() =>
+                editor.chain().focus().toggleHeading({ level: 2 }).run()
+              }
               label="Heading 2"
             >
               <Heading2 className="h-3.5 w-3.5" />
@@ -786,7 +1286,9 @@ export function RichTextEditor({
             <ToolbarButton
               active={editor.isActive("heading", { level: 3 })}
               disabled={editor.isActive("code") || editor.isActive("codeBlock")}
-              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+              onClick={() =>
+                editor.chain().focus().toggleHeading({ level: 3 }).run()
+              }
               label="Heading 3"
             >
               <Heading3 className="h-3.5 w-3.5" />
@@ -848,6 +1350,53 @@ export function RichTextEditor({
 
       <EditorContent editor={editor} />
 
+      {typeof document !== "undefined"
+        ? createPortal(
+            <AnimatePresence>
+              {sectionTagState ? (
+                <motion.div
+                  initial={{
+                    opacity: 0,
+                    y: sectionTagState.placeAbove ? 4 : -4,
+                    scale: 0.98,
+                  }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{
+                    opacity: 0,
+                    y: sectionTagState.placeAbove ? 4 : -4,
+                    scale: 0.98,
+                  }}
+                  transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <SectionReferencePicker
+                    dataAttribute="data-creed-section-tag-popup"
+                    items={sectionTagState.items}
+                    activeIndex={sectionTagIndex}
+                    onActiveIndexChange={setSectionTagIndex}
+                    onSelect={selectSectionTagItem}
+                    emptyMessage={
+                      sectionTagState.query.trim()
+                        ? "No sections match"
+                        : undefined
+                    }
+                    style={{
+                      left: sectionTagState.x,
+                      width: sectionTagState.width,
+                      top: sectionTagState.placeAbove
+                        ? undefined
+                        : sectionTagState.top,
+                      bottom: sectionTagState.placeAbove
+                        ? sectionTagState.bottomOffset
+                        : undefined,
+                    }}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
+
       <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
         <DialogContent className="rounded-[var(--radius-xl)] border-[var(--creed-border)] bg-[var(--creed-surface)]">
           <DialogHeader>
@@ -875,7 +1424,12 @@ export function RichTextEditor({
                 if (!editor) {
                   return;
                 }
-                editor.chain().focus().extendMarkRange("link").unsetLink().run();
+                editor
+                  .chain()
+                  .focus()
+                  .extendMarkRange("link")
+                  .unsetLink()
+                  .run();
                 setLinkDialogOpen(false);
               }}
             >
@@ -902,7 +1456,9 @@ export function RichTextEditor({
             style={{
               left: slashState.x,
               top: slashState.placeAbove ? undefined : slashState.y,
-              bottom: slashState.placeAbove ? slashState.bottomOffset : undefined,
+              bottom: slashState.placeAbove
+                ? slashState.bottomOffset
+                : undefined,
             }}
           >
             {slashState.items.map((command, index) => {
@@ -922,7 +1478,9 @@ export function RichTextEditor({
                   }}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--creed-text-tertiary)]" />
-                  <span className="flex-1 truncate font-medium">{command.title}</span>
+                  <span className="flex-1 truncate font-medium">
+                    {command.title}
+                  </span>
                   {isActive ? (
                     <span className="text-[11px] text-[var(--creed-text-tertiary)]">
                       {command.description}
@@ -960,7 +1518,8 @@ function ToolbarButton({
       title={label}
       className={cn(
         "flex h-7 w-7 items-center justify-center rounded-md text-[var(--creed-text-secondary)] transition-colors duration-100 hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-[var(--creed-text-secondary)]",
-        active && "bg-[var(--creed-surface-raised)] text-[var(--creed-text-primary)]"
+        active &&
+          "bg-[var(--creed-surface-raised)] text-[var(--creed-text-primary)]",
       )}
     >
       {children}
@@ -969,5 +1528,7 @@ function ToolbarButton({
 }
 
 function ToolbarDivider() {
-  return <span aria-hidden className="mx-0.5 h-4 w-px bg-[var(--creed-border)]" />;
+  return (
+    <span aria-hidden className="mx-0.5 h-4 w-px bg-[var(--creed-border)]" />
+  );
 }
