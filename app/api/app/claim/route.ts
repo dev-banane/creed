@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { CreedSection } from "@/lib/creed-data";
 import { createBlankCreedState, persistCreedState } from "@/lib/creed-backend";
+import { ensurePersonalCreedId } from "@/lib/creed-context";
 import { requireApiAuth } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit-log";
 
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
   nextState.proposals = [];
   nextState.activity = [];
 
+  await ensurePersonalCreedId(auth.supabase, auth.user);
   await persistCreedState(auth.supabase, auth.user.id, nextState);
 
   void recordAuditEvent({
