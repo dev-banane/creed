@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getAppVersion } from "@/lib/app-version";
 import {
   isSupabaseAdminConfigured,
   isSupabaseConfigured,
@@ -102,7 +103,7 @@ async function buildPayload(): Promise<{
     payload: {
       status,
       time: new Date().toISOString(),
-      version: process.env.NEXT_PUBLIC_RELEASE_SHA ?? null,
+      version: getAppVersion(),
       uptimeSeconds: Math.round(process.uptime?.() ?? 0),
       components,
     },
