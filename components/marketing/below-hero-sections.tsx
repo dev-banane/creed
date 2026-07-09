@@ -599,12 +599,14 @@ function PanelFeatureDemo() {
 
 function ComingSoonDemo() {
   const particles = [
-    { x: -52, y: -42, delay: 0 },
-    { x: 46, y: -50, delay: 0.28 },
-    { x: -62, y: 18, delay: 0.56 },
-    { x: 58, y: 14, delay: 0.84 },
-    { x: -28, y: 58, delay: 1.12 },
-    { x: 30, y: 54, delay: 1.4 },
+    { x: -62, y: -48, delay: 0 },
+    { x: 56, y: -58, delay: 0.24 },
+    { x: -72, y: 20, delay: 0.48 },
+    { x: 68, y: 18, delay: 0.72 },
+    { x: -34, y: 68, delay: 0.96 },
+    { x: 38, y: 64, delay: 1.2 },
+    { x: 4, y: -76, delay: 1.44 },
+    { x: 78, y: -14, delay: 1.68 },
   ] as const;
 
   return (
@@ -614,20 +616,26 @@ function ComingSoonDemo() {
           <motion.span
             key={`${particle.x}-${particle.y}`}
             aria-hidden="true"
-            className="absolute text-[18px] font-medium leading-none text-white/72 drop-shadow-[0_3px_12px_rgba(255,255,255,0.35)] dark:text-[#052e16]/72 dark:drop-shadow-[0_3px_12px_rgba(5,46,22,0.22)]"
-            initial={false}
+            className="absolute z-10 text-[22px] font-medium leading-none tracking-[-0.08em] text-current"
+            initial={{
+              x: 0,
+              y: 0,
+              opacity: 0.48,
+              scale: 0.72,
+              rotate: 0,
+            }}
             animate={{
               x: [0, particle.x],
               y: [0, particle.y],
-              opacity: [0, 0.85, 0],
-              scale: [0.55, 1, 0.8],
+              opacity: [0.48, 0.86, 0.42],
+              scale: [0.72, 1.05, 0.78],
               rotate: index % 2 === 0 ? [0, -12] : [0, 12],
             }}
             transition={{
-              duration: 2.1,
+              duration: 2.4,
               delay: particle.delay,
               repeat: Infinity,
-              repeatDelay: 0.35,
+              repeatDelay: 0,
               ease: [0.22, 1, 0.36, 1],
             }}
           >
@@ -635,7 +643,7 @@ function ComingSoonDemo() {
           </motion.span>
         ))}
         <span className="absolute h-28 w-28 animate-pulse rounded-full bg-white/8 blur-xl dark:bg-[#052e16]/10" />
-        <span className="relative text-[88px] font-medium leading-none tracking-[-0.08em]">
+        <span className="relative z-20 text-[88px] font-medium leading-none tracking-[-0.08em]">
           ?
         </span>
       </div>
