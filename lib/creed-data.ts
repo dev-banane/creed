@@ -1384,7 +1384,18 @@ export function buildVisibleCreedMarkdown(sections: CreedSection[]) {
   // a single visual gap, not a stack of trailing newlines.
   return sections
     .filter((section) => !section.archived)
-    .map((section) => sectionToMarkdown(section).trim())
+    .map((section) => {
+      const markdown = sectionToMarkdown(section).trim();
+      if (!markdown) return markdown;
+      // Carry the section's accent through the GitHub round-trip in an HTML
+      // comment under the heading (invisible in rendered markdown); the pull
+      // parser reads it back so recolored sections survive push -> pull. Only
+      // here, not in sectionToMarkdown, so AI prompt bodies stay comment-free.
+      return markdown.replace(
+        /^(##[^\n]*)/,
+        `$1\n\n<!-- creed:accent=${section.accent} -->`,
+      );
+    })
     .filter(Boolean)
     .join("\n\n")
     .concat("\n");

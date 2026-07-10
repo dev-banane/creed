@@ -177,15 +177,32 @@ export function McpHealthDashboard() {
     function onFocusAgent(event: Event) {
       const detail = (event as CustomEvent<{ clientId?: string }>).detail;
       setAgentFilter(detail?.clientId ?? "all");
-      // Scroll only after the filter change has re-rendered (charts resize and
-      // shift layout), otherwise the target lands offset from the heading.
+      // The dashboard is the last block in the page's scroll container, and the
+      // filter change resizes charts after any fixed frame delay - so instead of
+      // scrollIntoView (whose target goes stale), scroll the container to its
+      // bottom, re-issuing for a few frames until the layout stops growing.
+      const container = rootRef.current?.closest(
+        "[class*='overflow-y-auto']",
+      ) as HTMLElement | null;
+      if (!container) return;
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          rootRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        });
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        // Charts keep resizing past this frame; nudge the target whenever the
+        // container grows, then stop once layout has been stable for a while.
+        let lastHeight = container.scrollHeight;
+        let stableFrames = 0;
+        const settle = () => {
+          if (container.scrollHeight !== lastHeight) {
+            lastHeight = container.scrollHeight;
+            stableFrames = 0;
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: "smooth",
+            });
+          }
+          if (stableFrames++ < 45) requestAnimationFrame(settle);
+        };
+        requestAnimationFrame(settle);
       });
     }
     window.addEventListener("creed:mcp-health-focus-agent", onFocusAgent);

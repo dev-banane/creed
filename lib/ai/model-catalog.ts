@@ -77,7 +77,9 @@ const FEATURE_MODEL_ENV: Record<AiFeature, string> = {
 // OpenRouter lands on that fast silicon). The flagship default stays for the
 // deeper features.
 const FEATURE_MODEL_DEFAULT: Record<AiFeature, string> = {
-  analysis: DEFAULT_AI_MODEL_ID,
+  // Analysis runs on Haiku: near-flagship quality on structured extraction at a
+  // fraction of the cost and latency. Override with ANALYSIS_MODEL.
+  analysis: "anthropic/claude-haiku-4.5",
   tab: DEFAULT_AI_MODEL_ID,
   panel: "openai/gpt-oss-120b",
 };

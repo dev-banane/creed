@@ -1,4 +1,4 @@
-import type { AccentKey, CreedSection } from "./creed-data.ts";
+import { isAccentKey, type AccentKey, type CreedSection } from "./creed-data.ts";
 import { markdownToRichHtml } from "./rich-text.ts";
 
 type ParseResult = {
@@ -95,13 +95,25 @@ function inferAccent(name: string): AccentKey {
 }
 
 
+// Push writes the section's accent into an HTML comment under the heading
+// (see buildVisibleCreedMarkdown). Read it back here so recolored sections
+// survive the round-trip, and strip the comment so it never reaches the
+// editor content. Files without the marker fall back to name inference.
+const ACCENT_COMMENT = /<!--\s*creed:accent=([a-z-]+)\s*-->\n?/g;
+
 function parseSectionBody(
   id: string,
   name: string,
   body: string,
   _index: number
 ): CreedSection {
-  const normalizedBody = body.trim();
+  let markedAccent: AccentKey | undefined;
+  const normalizedBody = body
+    .replace(ACCENT_COMMENT, (_match, value: string) => {
+      if (isAccentKey(value)) markedAccent = value;
+      return "";
+    })
+    .trim();
 
   function makeRichTextSection(content: string, template: CreedSection["template"] = "freeform"): CreedSection {
     return {
@@ -109,7 +121,7 @@ function parseSectionBody(
       kind: "rich-text",
       template,
       name,
-      accent: inferAccent(name),
+      accent: markedAccent ?? inferAccent(name),
       content,
       // Pulled sections must be agent-writable, matching every other
       // creation path (onboarding, in-app create, agent-create). If this

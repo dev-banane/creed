@@ -36,15 +36,35 @@ export async function POST(request: Request) {
     // parser's historical `agentWritable: false` and the MCP contract
     // reports zero editable sections. Healing here also fixes rows that
     // a prior pull wrote with `false`. The next pull rewrites them.
-    const importedSections = body.sections.map((section) => ({
-      ...section,
-      agentWritable: true,
-      agentPermission: "propose" as const,
-    }));
+    const existingById = new Map(
+      result.state.sections.map((section) => [section.id, section])
+    );
+    const importedSections = body.sections.map((section) => {
+      // Older remote files carry no accent marker, so the parser falls back
+      // to "custom" (mono). Keep the locally stored color in that case.
+      const existing = existingById.get(section.id);
+      const accent =
+        section.accent === "custom" && existing && !existing.archived
+          ? existing.accent
+          : section.accent;
+      return {
+        ...section,
+        accent,
+        agentWritable: true,
+        agentPermission: "propose" as const,
+      };
+    });
+    // Archived sections never appear in the pushed markdown, so a pull must
+    // not delete them - they stay restorable from Settings. Retain any that
+    // the import didn't reintroduce under the same id.
+    const importedIds = new Set(importedSections.map((section) => section.id));
+    const retainedArchived = result.state.sections.filter(
+      (section) => section.archived && !importedIds.has(section.id)
+    );
     const nextState = {
       ...result.state,
       lastSavedAt: Date.now(),
-      sections: importedSections,
+      sections: [...importedSections, ...retainedArchived],
       proposals: [],
       settings: {
         ...result.state.settings,
@@ -58,9 +78,16 @@ export async function POST(request: Request) {
         },
       },
       mutationTick: result.state.mutationTick + 1,
-      sectionRevisions: Object.fromEntries(
-        body.sections.map((section) => [section.id, 1])
-      ),
+      sectionRevisions: Object.fromEntries([
+        ...body.sections.map((section) => [section.id, 1] as const),
+        ...retainedArchived.map(
+          (section) =>
+            [
+              section.id,
+              result.state.sectionRevisions?.[section.id] ?? 1,
+            ] as const
+        ),
+      ]),
     };
 
     await persistCreedState(supabase, user.id, nextState);

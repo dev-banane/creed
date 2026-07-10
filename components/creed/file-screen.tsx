@@ -203,29 +203,29 @@ function formatRelativeTime(timestamp?: string, fallbackLabel?: string) {
   }
 
   if (minutes < 60) {
-    return `${minutes}m ago`;
+    return `${minutes}m`;
   }
 
   const hours = Math.round(minutes / 60);
   if (hours < 24) {
-    return `${hours}h ago`;
+    return `${hours}h`;
   }
 
   const days = Math.round(hours / 24);
   if (days === 1) {
-    return "1d ago";
+    return "1d";
   }
 
   if (days < 7) {
-    return `${days}d ago`;
+    return `${days}d`;
   }
 
   const weeks = Math.round(days / 7);
   if (weeks === 1) {
-    return "1w ago";
+    return "1w";
   }
 
-  return `${weeks}w ago`;
+  return `${weeks}w`;
 }
 
 function ActivityFilterPill({
@@ -2920,8 +2920,8 @@ export function FileScreen() {
               <SectionChangeList
                 changes={computeSectionChanges(
                   pushPreview.sections,
-                  state.sections,
-                  state.sections,
+                  visibleSections,
+                  visibleSections,
                 )}
                 heading="Outgoing changes"
                 show={showPushPreview}
@@ -2986,9 +2986,9 @@ export function FileScreen() {
 
               <SectionChangeList
                 changes={computeSectionChanges(
-                  state.sections,
+                  visibleSections,
                   pullPreview.sections,
-                  state.sections,
+                  visibleSections,
                 )}
                 heading="Incoming changes"
                 show={showPullPreview}
