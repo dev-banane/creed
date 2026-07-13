@@ -890,6 +890,12 @@ export function FileScreen() {
     return buckets;
   }, [stablePendingProposals]);
   const [activityOpen, setActivityOpen] = useState(false);
+  // Watching the state covers every open path at once (the A shortcut, the
+  // header buttons, shell intents), so the "Check activity" getting-started
+  // step can't be missed by a new entry point.
+  useEffect(() => {
+    if (activityOpen) markGettingStartedStep("activity");
+  }, [activityOpen, markGettingStartedStep]);
 
   // Plain A toggles the activity sidebar (guarded like the shell's other
   // single-key shortcuts: K panel, M theme, S sidebar).
