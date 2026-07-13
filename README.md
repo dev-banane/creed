@@ -1,9 +1,11 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="public/assets/brand/brandmark-email-dark.png">
-  <img alt="Creed" src="public/assets/brand/brandmark-email.png" width="208">
-</picture>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/assets/brand/brandmark-email-dark.png">
+    <img alt="Creed" src="public/assets/brand/brandmark-email.png" width="208">
+  </picture>
+</h1>
 
 **One file across every agent.**
 
