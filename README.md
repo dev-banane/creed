@@ -5,7 +5,7 @@
   <img alt="Creed" src="public/assets/brand/brandmark-email.png" width="208">
 </picture>
 
-<br><br>
+---
 
 **One file across every agent.**
 
