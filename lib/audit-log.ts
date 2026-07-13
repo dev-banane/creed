@@ -1,6 +1,7 @@
 import "server-only";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/lib/supabase/env";
+import { log } from "@/lib/observability";
 
 export type AuditAction =
   | "tokens.rotated"
@@ -71,8 +72,13 @@ export async function recordAuditEvent(input: AuditLogInput): Promise<void> {
       user_agent: input.request?.headers.get("user-agent") ?? null,
     });
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[audit-log] Failed to record event", input.action, error);
-    }
+    // Audit is best-effort (never blocks the mutation), but the failure must
+    // still be observable - the old console.warn was gated to non-production,
+    // so audit-write failures were invisible in prod.
+    log.warn(
+      "audit_log_failed",
+      { action: input.action },
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 }
