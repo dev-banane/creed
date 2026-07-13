@@ -99,10 +99,12 @@ export function GettingStartedCardView({
             <span className="flex-1 truncate text-[13px] font-medium leading-5 text-[var(--creed-text-primary)]">
               Get started
             </span>
-            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-[12px] tabular-nums text-[var(--creed-text-tertiary)]">
+            {/* right-12 lines the counter's right edge up with the version
+                toast's Refresh label (action button at right-10 + px-2). */}
+            <span className="absolute right-12 top-1/2 -translate-y-1/2 text-[12px] tabular-nums text-[var(--creed-text-tertiary)]">
               {doneCount}/{total}
             </span>
-            <span className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[8px] text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)]">
+            <span className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[8px] text-[var(--creed-text-secondary)] transition-colors hover:bg-[var(--creed-surface-raised)] hover:text-[var(--creed-text-primary)]">
               <ChevronDown
                 className={cn(
                   "h-4 w-4 transition-transform duration-300",

@@ -12,8 +12,15 @@ export function Toaster() {
       position="bottom-right"
       // Toasts sit above the "Get started" card when it's on screen; the
       // card publishes its live height into the CSS variable (0 elsewhere),
-      // so the stack tracks its expand/collapse in real time.
-      offset="calc(20px + var(--getting-started-offset, 0px))"
+      // so the stack tracks its expand/collapse in real time. Only the
+      // bottom offset moves - a plain string would shift every side and
+      // drag the stack left.
+      offset={{
+        bottom: "calc(20px + var(--getting-started-offset, 0px))",
+        right: 20,
+        top: 20,
+        left: 20,
+      }}
       gap={10}
       duration={4000}
       visibleToasts={4}
