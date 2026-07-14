@@ -11,6 +11,7 @@ const DISALLOW = [
   "/authorize",
   "/register",
   "/token",
+  "/revoke",
   "/file",
   "/onboarding",
   "/connections",

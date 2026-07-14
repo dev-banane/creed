@@ -24,6 +24,7 @@ export async function GET() {
       issuer: site,
       authorization_endpoint: `${site}/authorize`,
       token_endpoint: `${site}/token`,
+      revocation_endpoint: `${site}/revoke`,
       registration_endpoint: `${site}/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],

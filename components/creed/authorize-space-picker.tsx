@@ -36,14 +36,12 @@ export function AuthorizeSpacePicker({ spaces }: { spaces: SpaceOption[] }) {
 
   return (
     <div className="mt-6 text-left">
-      <label className="mb-2 block text-[13px] font-medium text-[var(--creed-text-secondary)]">
-        Creed this agent connects to
-      </label>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] px-3 text-[13px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] aria-expanded:bg-[var(--creed-surface-raised)]"
+            aria-label="Choose the Creed this agent connects to"
+            className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[var(--creed-border)] bg-[var(--creed-surface)] py-0 pl-2 pr-3 text-[13px] text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] aria-expanded:bg-[var(--creed-surface-raised)]"
           >
             <span className="flex min-w-0 items-center gap-2">
               {selected ? (
@@ -72,7 +70,7 @@ export function AuthorizeSpacePicker({ spaces }: { spaces: SpaceOption[] }) {
               <DropdownMenuItem
                 key={space.id}
                 onSelect={() => setSelectedId(space.id)}
-                className="flex items-center justify-between gap-3 text-[13px]"
+                className="flex items-center justify-between gap-3 px-2 text-[13px]"
               >
                 <span className="flex min-w-0 items-center gap-2 text-[var(--creed-text-primary)]">
                   <ProfileAvatar

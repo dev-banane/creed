@@ -99,6 +99,14 @@ Open `/connections` and add the Creed MCP URL to your agent as a custom connecto
 
 Creed is its own OAuth 2.1 authorization server (`/authorize`, `/token`, `/register`, `/.well-known/*`), so any spec-compliant MCP client connects from the server URL alone. First-class connect flows exist for Claude Code (one-line `claude mcp add`), Codex, Cursor (one-click), ChatGPT, Devin, OpenClaw, Hermes, OpenCode, Factory, Manus, and custom agents. Clients that do not speak MCP can use the documented `/api/creed` HTTP API.
 
+Creed also ships a first-party terminal client. It uses the same OAuth screen
+and discovers every tool, resource, and prompt from the live MCP server, so a
+new MCP tool appears in the CLI without a second implementation or release.
+
+```bash
+npx creed-cli
+```
+
 Agents get three verbs: read the file, propose an update, or direct-edit where you have granted it. A health dashboard tracks per-agent reads, writes, and errors.
 
 ## Stack

@@ -173,6 +173,24 @@ const sections: DocsSection[] = [
     ],
   },
   {
+    id: "creed-cli",
+    label: "Creed CLI",
+    group: "Connect your agents",
+    title: "Creed CLI",
+    paragraphs: [
+      "Creed CLI brings the complete live MCP surface into your terminal. Install it from npm, run creed, approve the same OAuth consent screen used by other agents, and then call any Creed tool directly or use the interactive terminal.",
+      "The CLI discovers tools, resources, prompts, descriptions, and input schemas from the live Creed MCP server. New MCP capabilities appear automatically without a second implementation in the CLI.",
+    ],
+    bullets: [
+      "Install globally with npm install --global creed-cli, then run creed.",
+      "Run without installing with npx creed-cli.",
+      "Check the connection and live capability counts with creed doctor.",
+      "List exact tool names with creed tools, or call one with creed call read_creed.",
+      "Use --json for scripts and coding agents. Diagnostics stay on stderr and structured output stays on stdout.",
+      "Run creed logout to revoke the OAuth grant and remove local credentials.",
+    ],
+  },
+  {
     id: "troubleshooting",
     label: "Troubleshooting",
     group: "Connect your agents",

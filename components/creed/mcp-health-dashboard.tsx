@@ -126,6 +126,7 @@ const AGENT_LABEL: Partial<Record<AgentIconKind, string>> = {
   hermes: "Hermes",
   factory: "Factory",
   manus: "Manus",
+  cli: "Creed CLI",
 };
 
 function cleanName(name: string) {

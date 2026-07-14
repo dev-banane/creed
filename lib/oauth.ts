@@ -407,3 +407,45 @@ export async function revokeOAuthTokensForUser(userId: string, clientId?: string
   }
   await query;
 }
+
+// RFC 7009 token revocation for public OAuth clients such as Creed CLI. The
+// caller must prove the client id that owns the opaque token, so one client can
+// never revoke another client's grant. Both token forms are accepted because
+// clients are allowed to revoke either one.
+export async function revokeOAuthToken(token: string, clientId: string) {
+  const admin = adminDb();
+  const tokenHash = hashSecret(token);
+  const accessLookup = await admin
+    .from("oauth_tokens")
+    .select("id, user_id, client_id")
+    .eq("access_token_hash", tokenHash)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (accessLookup.error) return { ok: false as const, error: "server_error" };
+  const refreshLookup = accessLookup.data
+    ? null
+    : await admin
+        .from("oauth_tokens")
+        .select("id, user_id, client_id")
+        .eq("refresh_token_hash", tokenHash)
+        .eq("client_id", clientId)
+        .maybeSingle();
+  if (refreshLookup?.error) return { ok: false as const, error: "server_error" };
+  const row = (accessLookup.data ?? refreshLookup?.data) as {
+    id: string;
+    user_id: string;
+    client_id: string;
+  } | null;
+  // RFC 7009 deliberately returns success for an unknown token so the endpoint
+  // cannot be used as a token oracle.
+  if (!row) return { ok: true as const, userId: null, clientId: null };
+
+  const revokedAt = new Date().toISOString();
+  const { error: revokeError } = await admin
+    .from("oauth_tokens")
+    .update({ revoked_at: revokedAt })
+    .eq("id", row.id);
+  if (revokeError) return { ok: false as const, error: "server_error" };
+
+  return { ok: true as const, userId: row.user_id, clientId: row.client_id };
+}

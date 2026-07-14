@@ -13,6 +13,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-07-14",
+    title: "Creed CLI",
+    body: "Creed now has a first-party terminal client on npm. It uses the same browser OAuth flow and mirrors the live MCP server, so every current and future Creed tool is available from the terminal without a separate implementation.",
+    highlights: [
+      "Install globally with npm install --global creed-cli or run it once with npx creed-cli.",
+      "Interactive and one-shot commands for tools, resources, and prompts.",
+      "JSON output for scripts and coding agents, with diagnostics kept on stderr.",
+      "Secure per-server credential storage, automatic token refresh, and OAuth revocation on logout.",
+    ],
+  },
+  {
     date: "2026-07-12",
     title: "Tab autocomplete",
     body: "Press Tab while editing and Creed finishes the thought in your voice, drawn from your whole file. One suggestion per press, streamed as ghost text in a few hundred milliseconds.",

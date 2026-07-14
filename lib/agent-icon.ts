@@ -7,6 +7,7 @@ import type { AgentIconKind } from "@/lib/creed-data";
 // multi-word names ("claude code") must come before their broader prefixes
 // ("claude"), and broad substrings ("v0") sit last so exact names match first.
 const agentAliases: Array<[AgentIconKind, string[]]> = [
+  ["cli", ["creed cli", "creed-cli", "creed_cli"]],
   ["claudecode", ["claude code", "claude-code", "claude_code", "claudecode"]],
   ["chatgpt", ["chatgpt", "chat gpt", "chat-gpt"]],
   ["claude", ["claude"]],
@@ -61,6 +62,7 @@ const AGENT_CATEGORY_BY_ICON: Partial<Record<AgentIconKind, AgentCategory>> = {
   openclaw: "personal",
   hermes: "personal",
   manus: "personal",
+  cli: "personal",
 };
 
 export function getAgentCategory(icon: AgentIconKind): AgentCategory {

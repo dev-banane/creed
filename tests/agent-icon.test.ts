@@ -15,3 +15,8 @@ test("agent icon inference keeps OpenAI surfaces distinct", () => {
   assert.equal(getAgentIconKind("ChatGPT"), "chatgpt");
   assert.equal(getAgentIconKind("ChatGPT connector"), "chatgpt");
 });
+
+test("agent icon inference gives Creed CLI its first-party identity", () => {
+  assert.equal(getAgentIconKind("Creed CLI"), "cli");
+  assert.equal(getAgentIconKind("creed-cli"), "cli");
+});
