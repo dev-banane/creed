@@ -1,7 +1,52 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { connectCreed, listAllPrompts, listAllResources, listAllTools } from "../src/mcp/client.js";
+
+test("walks every advertised MCP capability page", async () => {
+  const client = {
+    listTools: async (params?: { cursor?: string }) =>
+      params?.cursor
+        ? { tools: [{ name: "tool-two", inputSchema: { type: "object" } }] }
+        : { tools: [{ name: "tool-one", inputSchema: { type: "object" } }], nextCursor: "tools-2" },
+    listResources: async (params?: { cursor?: string }) =>
+      params?.cursor
+        ? { resources: [{ uri: "creed://two", name: "Two" }] }
+        : { resources: [{ uri: "creed://one", name: "One" }], nextCursor: "resources-2" },
+    listPrompts: async (params?: { cursor?: string }) =>
+      params?.cursor
+        ? { prompts: [{ name: "prompt-two" }] }
+        : { prompts: [{ name: "prompt-one" }], nextCursor: "prompts-2" },
+  } as unknown as Client;
+
+  assert.deepEqual(
+    (await listAllTools(client)).map((tool) => tool.name),
+    ["tool-one", "tool-two"],
+  );
+  assert.deepEqual(
+    (await listAllResources(client)).map((resource) => resource.uri),
+    ["creed://one", "creed://two"],
+  );
+  assert.deepEqual(
+    (await listAllPrompts(client)).map((prompt) => prompt.name),
+    ["prompt-one", "prompt-two"],
+  );
+});
+
+test("stops when an MCP server repeats a pagination cursor", async () => {
+  const client = {
+    listTools: async () => ({
+      tools: [],
+      nextCursor: "same-cursor",
+    }),
+  } as unknown as Client;
+
+  await assert.rejects(
+    () => listAllTools(client),
+    /repeated a tools cursor/,
+  );
+});
 
 test("discovers and invokes an MCP tool that the CLI has never defined", async (context) => {
   let sawAgentAttribution = false;

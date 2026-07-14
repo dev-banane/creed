@@ -2,8 +2,8 @@
 
 // MCP health dashboard rendered under the Creed MCP card on /connections.
 // Fetches an aggregated summary from /api/app/mcp/health (off the hot
-// loadCreedState path) and renders it with recharts. Four filters drive the
-// whole view client-side: agent, agent type, transport, and time range. The
+// loadCreedState path) and renders it with recharts. Three filters drive the
+// whole view client-side: agent, agent type, and time range. The
 // hero chart can switch metric (reads / directs / proposals / all activity).
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,10 +32,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AGENT_CATEGORY_FILTER_ITEMS,
-  getAgentCategory,
-} from "@/lib/agent-icon";
+import { AGENT_CATEGORY_FILTER_ITEMS } from "@/lib/agent-icon";
+import { filterMcpHealthSummary } from "@/lib/mcp-health-filter";
 import {
   accentColorMap,
   isAccentKey,
@@ -58,15 +56,6 @@ const RANGES: { value: McpHealthRange; label: string }[] = [
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
   { value: "90d", label: "90d" },
-];
-
-// Transport filter. Every agent connects over MCP today; CLI is here ahead of
-// the upcoming CLI connection type and simply shows zeroed data until then.
-const TRANSPORT_ITEMS = [
-  { key: "all", label: "All" },
-  { key: "mcp", label: "MCP" },
-  // Visible but not selectable until the CLI connection type launches.
-  { key: "cli", label: "CLI", disabled: true },
 ];
 
 const RANGE_WORD: Record<McpHealthRange, string> = {
@@ -126,7 +115,6 @@ const AGENT_LABEL: Partial<Record<AgentIconKind, string>> = {
   hermes: "Hermes",
   factory: "Factory",
   manus: "Manus",
-  cli: "Creed CLI",
 };
 
 function cleanName(name: string) {
@@ -156,7 +144,6 @@ export function McpHealthDashboard() {
   const [range, setRange] = useState<McpHealthRange>("30d");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [transportFilter, setTransportFilter] = useState<string>("all");
   const [metric, setMetric] = useState<ChartMetric>("all");
   // Scope the client cache to the active Creed so switching Creeds never shows
   // the previous one's dashboard. Empty string = personal/active Creed.
@@ -237,7 +224,9 @@ export function McpHealthDashboard() {
       window.removeEventListener("creed:mcp-health-focus-agent", onFocusAgent);
   }, []);
 
-  const mcpClientCount = state.mcpClients.length;
+  const mcpClientCount = state.mcpClients.filter(
+    (client) => client.icon !== "cli",
+  ).length;
 
   // Current sections from the live file, keyed by id, so coverage shows the
   // section's real name + accent (activity rows snapshot a stale name and
@@ -283,67 +272,24 @@ export function McpHealthDashboard() {
     // Re-fetch on range change, Creed switch, and whenever a new agent shows up.
   }, [range, creedKey, mcpClientCount]);
 
-  // Everything below reads from this scoped view of the summary: agents
-  // outside the selected type / transport are dropped and every rollup (day
-  // series, section counts, totals) is re-derived from the survivors'
-  // per-agent maps. Every agent is MCP today, so "mcp" is a no-op and "cli"
-  // matches nothing until the CLI connection type ships.
-  const filteredSummary = useMemo(() => {
-    if (!summary || (categoryFilter === "all" && transportFilter !== "cli")) {
-      return summary;
-    }
-    const allowed = new Set(
-      transportFilter === "cli"
-        ? []
-        : summary.agents
-            .filter((agent) => getAgentCategory(agent.icon) === categoryFilter)
-            .map((agent) => agent.clientId),
-    );
-    const sumOf = (byAgent: Record<string, number>) =>
-      Object.entries(byAgent).reduce(
-        (total, [id, count]) => (allowed.has(id) ? total + count : total),
-        0,
-      );
-    const agents = summary.agents.filter((agent) =>
-      allowed.has(agent.clientId),
-    );
-    const days = summary.days.map((day) => ({
-      ...day,
-      reads: sumOf(day.readsByAgent),
-      directs: sumOf(day.directsByAgent),
-      proposals: sumOf(day.proposalsByAgent),
-      accepted: sumOf(day.acceptedByAgent),
-      rejected: sumOf(day.rejectedByAgent),
-      pending: sumOf(day.pendingByAgent),
-    }));
-    const sections = summary.sections
-      .map((section) => ({ ...section, count: sumOf(section.byAgent) }))
-      .filter((section) => section.count > 0);
-    const sumAgents = (
-      key:
-        "reads" | "directs" | "proposals" | "accepted" | "rejected" | "pending",
-    ) => agents.reduce((total, agent) => total + agent[key], 0);
-    const accepted = sumAgents("accepted");
-    const rejected = sumAgents("rejected");
-    return {
-      ...summary,
-      agents,
-      days,
-      sections,
-      totals: {
-        ...summary.totals,
-        agents: agents.length,
-        reads: sumAgents("reads"),
-        directs: sumAgents("directs"),
-        proposals: sumAgents("proposals"),
-        accepted,
-        rejected,
-        pending: sumAgents("pending"),
-        acceptRate:
-          accepted + rejected > 0 ? accepted / (accepted + rejected) : null,
-      },
-    };
-  }, [summary, categoryFilter, transportFilter]);
+  // Everything below reads from this MCP-only view of the summary. CLI usage
+  // is deliberately excluded because it has its own setup mode and status
+  // surface. The remaining category filter and every rollup are re-derived
+  // from the surviving MCP agents' per-agent maps.
+  const mcpOnlySummary = useMemo(() => {
+    if (!summary) return summary;
+    return filterMcpHealthSummary(summary, "all");
+  }, [summary]);
+  const filteredSummary = useMemo(
+    () =>
+      mcpOnlySummary && categoryFilter !== "all"
+        ? filterMcpHealthSummary(
+            mcpOnlySummary,
+            categoryFilter as "chatbot" | "coding" | "personal",
+          )
+        : mcpOnlySummary,
+    [mcpOnlySummary, categoryFilter],
+  );
 
   // Keep the agent filter valid if the roster or category scope changes.
   useEffect(() => {
@@ -517,10 +463,10 @@ export function McpHealthDashboard() {
   );
 
   const metricLabel = METRICS.find((m) => m.value === metric)?.label ?? "Reads";
-  // The connect empty-state keys off the unfiltered summary: a category filter
-  // that happens to match nothing should show zeroed tiles, not "connect an
-  // agent" copy.
-  const rawTotals = summary?.totals;
+  // The connect empty-state keys off the MCP-only, category-unfiltered summary.
+  // CLI activity cannot make it appear connected, while an empty category
+  // filter still shows zeroed metrics instead of setup copy.
+  const rawTotals = mcpOnlySummary?.totals;
   const isEmpty =
     !loading &&
     summary &&
@@ -582,20 +528,6 @@ export function McpHealthDashboard() {
             }}
             align="end"
             menuWidthClass="min-w-28"
-          />
-          <Dropdown
-            trigger={
-              TRANSPORT_ITEMS.find((item) => item.key === transportFilter)
-                ?.label ?? "All"
-            }
-            items={TRANSPORT_ITEMS}
-            selectedKey={transportFilter}
-            onSelect={(key) => {
-              setTransportFilter(key);
-              setActiveSection(null);
-            }}
-            align="end"
-            menuWidthClass="min-w-24"
           />
           <Dropdown
             trigger={range}

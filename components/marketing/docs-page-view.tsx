@@ -185,6 +185,7 @@ const sections: DocsSection[] = [
       "Install globally with npm install --global creed-cli, then run creed.",
       "Run without installing with npx creed-cli.",
       "Check the connection and live capability counts with creed doctor.",
+      "Use creed status for local credential state; use creed doctor when you need a live server check.",
       "List exact tool names with creed tools, or call one with creed call read_creed.",
       "Use the per-agent --agent ID from the Connections page for attributed CLI status and last-seen times.",
       "Use --json for scripts and coding agents. Diagnostics stay on stderr and structured output stays on stdout.",

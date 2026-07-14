@@ -57,11 +57,15 @@ const CLI_SETUP_STEPS = [
 
 type ConnectionMode = "mcp" | "cli";
 type CliConnectionStatus = {
+  creedId: string | null;
+  phase: "checking" | "ready" | "unavailable";
   connected: boolean;
   agents: Record<string, { lastSeenAt: string | null }>;
 };
 
 const EMPTY_CLI_STATUS: CliConnectionStatus = {
+  creedId: null,
+  phase: "ready",
   connected: false,
   agents: {},
 };
@@ -91,7 +95,15 @@ export function ConnectionsScreen() {
     () => splitConnectionClients(state.mcpClients).mcp,
     [state.mcpClients],
   );
-  const cliConnected = cliStatus.connected;
+  const activeCliStatus = cliStatus.creedId === (state.creedId ?? null)
+    ? cliStatus
+    : {
+        creedId: state.creedId ?? null,
+        phase: "checking" as const,
+        connected: false,
+        agents: {},
+      };
+  const cliConnected = activeCliStatus.connected;
   const connected = mcpAgentClients.length > 0;
   const mcpStatusLabel = connected ? "Connected" : "Not connected via MCP";
   const showMcpStack = connected;
@@ -117,16 +129,23 @@ export function ConnectionsScreen() {
           connected?: boolean;
           agents?: Record<string, { lastSeenAt: string | null }>;
         };
-        if (!disposed) {
-          setCliStatus(
-            response.ok && payload.connected === true
-              ? { connected: true, agents: payload.agents ?? {} }
-              : EMPTY_CLI_STATUS,
-          );
+        if (!response.ok || typeof payload.connected !== "boolean") {
+          throw new Error("Could not check CLI connection.");
         }
+        if (!disposed) setCliStatus({
+          creedId,
+          phase: "ready",
+          connected: payload.connected,
+          agents: payload.connected ? payload.agents ?? {} : {},
+        });
       } catch (error) {
         if (!disposed && !(error instanceof DOMException && error.name === "AbortError")) {
-          setCliStatus(EMPTY_CLI_STATUS);
+          setCliStatus({
+            creedId,
+            phase: "unavailable",
+            connected: false,
+            agents: {},
+          });
         }
       }
     };
@@ -377,7 +396,13 @@ export function ConnectionsScreen() {
                       )}
                     />
                     <span>
-                      {cliConnected ? "Connected" : "Not connected via CLI"}
+                      {activeCliStatus.phase === "checking"
+                        ? "Checking connection"
+                        : activeCliStatus.phase === "unavailable"
+                          ? "Connection unavailable"
+                          : cliConnected
+                            ? "Connected"
+                            : "Not connected via CLI"}
                     </span>
                   </div>
                 </div>
@@ -484,7 +509,7 @@ export function ConnectionsScreen() {
               connection,
               mcpAgentClients,
             );
-            const cliAgentStatus = cliStatus.agents[connection.icon];
+            const cliAgentStatus = activeCliStatus.agents[connection.icon];
             const cardConnected = connectionMode === "cli"
               ? Boolean(cliAgentStatus)
               : isConnected;
@@ -500,6 +525,11 @@ export function ConnectionsScreen() {
                 isConnected={cardConnected}
                 lastSeen={cardLastSeen}
                 mode={connectionMode}
+                statusOverride={
+                  connectionMode === "cli" && activeCliStatus.phase !== "ready"
+                    ? activeCliStatus.phase
+                    : undefined
+                }
                 showMenu
                 onRevoke={connectionMode === "mcp" ? () => revokeAgent(connection.icon) : undefined}
                 onLogs={connectionMode === "mcp" ? () => openLogs(connection.icon) : undefined}

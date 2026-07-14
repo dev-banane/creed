@@ -44,6 +44,9 @@ creed prompts
 creed prompt introduce-me
 ```
 
+`creed status` reports whether credentials exist locally. Use `creed doctor`
+when you need to verify the live OAuth session and server capabilities.
+
 Every MCP tool is also available directly by its exact name:
 
 ```bash

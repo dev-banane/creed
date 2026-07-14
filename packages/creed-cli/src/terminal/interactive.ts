@@ -1,13 +1,19 @@
 import { createInterface } from "node:readline/promises";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { parseToolArguments, shellSplit } from "../commands/arguments.js";
+import {
+  parseToolArguments,
+  parseToolArgumentValue,
+  shellSplit,
+  type JsonSchema,
+} from "../commands/arguments.js";
 import { errorMessage } from "../errors.js";
+import { listAllTools } from "../mcp/client.js";
 import { renderBrand } from "./brand.js";
 import { printToolResult } from "./output.js";
 
 type ObjectSchema = {
-  properties?: Record<string, { type?: string; description?: string; enum?: unknown[] }>;
+  properties?: Record<string, JsonSchema & { description?: string }>;
   required?: string[];
 };
 
@@ -25,27 +31,21 @@ async function fillMissingArguments(
     const options = property?.enum ? ` [${property.enum.join(" | ")}]` : "";
     const value = await rl.question(`${detail}\n${name}${options}: `);
     if (!value.trim()) throw new Error(`${name} is required.`);
-    result[name] = property?.type === "integer" || property?.type === "number"
-      ? Number(value)
-      : property?.type === "boolean"
-        ? value === "true" || value === "yes"
-        : property?.type === "object" || property?.type === "array"
-          ? JSON.parse(value) as unknown
-          : value;
+    result[name] = parseToolArgumentValue(value, property);
   }
   return result;
 }
 
 export async function runInteractive(client: Client, tools: Tool[]): Promise<void> {
-  const names = tools.map((tool) => tool.name).sort();
+  let liveTools = tools;
   const builtIns = ["help", "tools", "refresh", "exit", "quit"];
   const completer = (line: string): [string[], string] => {
     const fragment = line.trimStart();
+    const names = liveTools.map((tool) => tool.name).sort();
     const options = [...builtIns, ...names].filter((name) => name.startsWith(fragment));
     return [options.length > 0 ? options : [...builtIns, ...names], fragment];
   };
   const rl = createInterface({ input: process.stdin, output: process.stdout, completer, historySize: 100 });
-  let liveTools = tools;
   process.stdout.write(`\n${renderBrand()}\n\nYour context, wherever you work.\n↑/↓ for history, Ctrl+C to quit\n\n`);
   try {
     while (true) {
@@ -66,7 +66,7 @@ export async function runInteractive(client: Client, tools: Tool[]): Promise<voi
           continue;
         }
         if (command === "refresh") {
-          liveTools = (await client.listTools()).tools;
+          liveTools = await listAllTools(client);
           process.stdout.write(`Loaded ${liveTools.length} tools.\n`);
           continue;
         }
@@ -75,7 +75,9 @@ export async function runInteractive(client: Client, tools: Tool[]): Promise<voi
           process.stderr.write(`Unknown command: ${command}. Run tools to list available commands.\n`);
           continue;
         }
-        const parsed = await parseToolArguments(tokens, tool.inputSchema);
+        const parsed = await parseToolArguments(tokens, tool.inputSchema, {
+          allowMissingRequired: true,
+        });
         const args = await fillMissingArguments(rl, tool, parsed);
         const result = await client.callTool({ name: tool.name, arguments: args });
         printToolResult(result, false);

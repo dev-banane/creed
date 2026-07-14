@@ -36,7 +36,10 @@ import {
   deriveCompanyAccessState,
   type CreedRole,
 } from "@/lib/creed-permissions";
-import { getAgentIconKind } from "@/lib/agent-icon";
+import {
+  getAgentIconKind,
+  type CliAttributableAgentId,
+} from "@/lib/agent-icon";
 import { getSiteUrl } from "@/lib/supabase/env";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { decryptSecret, encryptSecret, hashSecret } from "@/lib/secret-crypto";
@@ -2318,7 +2321,7 @@ export async function recordCliAgentUsage(
   client: unknown,
   userId: string,
   tokenId: string,
-  agentIcon: AgentIconKind,
+  agentIcon: CliAttributableAgentId,
   creedId: string,
 ) {
   const db = client as SupabaseLikeClient;

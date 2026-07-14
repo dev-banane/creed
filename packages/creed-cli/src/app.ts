@@ -2,17 +2,13 @@ import { stdin as input } from "node:process";
 import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { CLI_VERSION, DEFAULT_SERVER_URL } from "./constants.js";
 import { parseToolArguments } from "./commands/arguments.js";
-import { loadCredential, loadSavedServer, saveServer } from "./config/store.js";
+import { parseGlobalOptions, validateServerUrl } from "./commands/options.js";
+import { loadCredential, loadSavedServer, removeCredential, saveServer } from "./config/store.js";
 import { CliError } from "./errors.js";
 import { connectCreed, listAllPrompts, listAllResources, listAllTools } from "./mcp/client.js";
 import { printToolResult, writeJson } from "./terminal/output.js";
 import { runInteractive } from "./terminal/interactive.js";
 import { revokeTokens } from "./auth/revoke.js";
-
-function optionValue(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
-}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -24,17 +20,38 @@ function usage(): string {
   return `Usage: creed [--agent ID] [command]\n\nCommands:\n  login                  Connect through Creed OAuth\n  logout                 Revoke and remove this connection\n  status                  Show local connection status\n  doctor                  Verify OAuth, MCP, tools, resources, and prompts\n  tools [--json]          List live MCP tools\n  call <tool> [options]   Call an exact MCP tool name\n  resources [--json]      List live MCP resources\n  resource <uri>          Read a resource\n  prompts [--json]        List live MCP prompts\n  prompt <name>           Get a prompt\n  config set server URL   Save a hosted or self-hosted MCP URL\n\nPass --agent ID when an agent invokes the CLI so Creed can attribute usage.\nRun creed with no command for the interactive terminal.\n`;
 }
 
+function assertArgumentCount(
+  args: string[],
+  expected: number,
+  commandUsage: string,
+): void {
+  if (args.length !== expected) throw new CliError(commandUsage, 2);
+}
+
+function parsePromptArguments(args: string[]): Record<string, string> | undefined {
+  if (args.length === 2) return undefined;
+  if (args.length !== 4 || args[2] !== "--args" || !args[3]) {
+    throw new CliError("Usage: creed prompt <name> [--args JSON]", 2);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(args[3]) as unknown;
+  } catch {
+    throw new CliError("Prompt --args must contain a JSON object of string values.", 2);
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((value) => typeof value !== "string")
+  ) {
+    throw new CliError("Prompt --args must contain a JSON object of string values.", 2);
+  }
+  return parsed as Record<string, string>;
+}
+
 export async function run(argv: string[]): Promise<void> {
-  const json = argv.includes("--json");
-  const quiet = argv.includes("--quiet");
-  const explicitServer = optionValue(argv, "--server") ?? process.env.CREED_MCP_URL;
-  const agent = optionValue(argv, "--agent");
-  const serverUrl = explicitServer ?? await loadSavedServer() ?? DEFAULT_SERVER_URL;
-  const args = argv.filter((value, index) =>
-    value !== "--server" && argv[index - 1] !== "--server" &&
-    value !== "--agent" && argv[index - 1] !== "--agent" &&
-    value !== "--json" && value !== "--quiet"
-  );
+  const { args, agent, server, json, quiet } = parseGlobalOptions(argv);
   const command = args[0];
 
   if (command === "--version" || command === "-v") {
@@ -47,15 +64,26 @@ export async function run(argv: string[]): Promise<void> {
     return;
   }
   if (command === "config") {
-    if (args[1] !== "set" || args[2] !== "server" || !args[3]) throw new CliError("Usage: creed config set server <URL>", 2);
-    const url = new URL(args[3]);
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) {
-      throw new CliError("Creed requires HTTPS, except for an explicit localhost server.", 2);
-    }
-    await saveServer(url.toString());
-    process.stdout.write(`Saved ${url.toString()}\n`);
+    if (args.length !== 4 || args[1] !== "set" || args[2] !== "server" || !args[3]) throw new CliError("Usage: creed config set server <URL>", 2);
+    const url = validateServerUrl(args[3]);
+    await saveServer(url);
+    process.stdout.write(`Saved ${url}\n`);
     return;
   }
+
+  if (command === "call" && !args[1]) {
+    throw new CliError("Usage: creed call <tool> [options]", 2);
+  }
+  if (command === "resource") {
+    assertArgumentCount(args, 2, "Usage: creed resource <uri>");
+  }
+  const promptArgs = command === "prompt" ? parsePromptArguments(args) : undefined;
+  if (["login", "logout", "status", "doctor", "tools", "resources", "prompts"].includes(command ?? "")) {
+    assertArgumentCount(args, 1, `Usage: creed ${command}`);
+  }
+
+  const configuredServer = server ?? process.env.CREED_MCP_URL ?? await loadSavedServer() ?? DEFAULT_SERVER_URL;
+  const serverUrl = validateServerUrl(configuredServer);
   if (command === "status") {
     const credential = await loadCredential(serverUrl);
     const connected = Boolean(credential.tokens && credential.clientInformation);
@@ -69,8 +97,7 @@ export async function run(argv: string[]): Promise<void> {
     try {
       revoked = await revokeTokens(serverUrl, credential.tokens as OAuthTokens | undefined, credential.clientInformation as OAuthClientInformationMixed | undefined);
     } catch { revoked = false; }
-    const callback = await import("./config/store.js");
-    await callback.removeCredential(serverUrl);
+    await removeCredential(serverUrl);
     if (json) writeJson({ ok: true, revoked, localCredentialsRemoved: true });
     else process.stdout.write(revoked ? "Disconnected Creed CLI.\n" : "Removed local credentials. Remote revocation could not be confirmed.\n");
     return;
@@ -93,8 +120,7 @@ export async function run(argv: string[]): Promise<void> {
       return;
     }
     if (command === "resource") {
-      if (!args[1]) throw new CliError("Usage: creed resource <uri>", 2);
-      const result = await connection.client.readResource({ uri: args[1] });
+      const result = await connection.client.readResource({ uri: args[1] as string });
       if (json) writeJson(result); else for (const content of result.contents) process.stdout.write(`${"text" in content ? content.text : JSON.stringify(content)}\n`);
       return;
     }
@@ -104,10 +130,7 @@ export async function run(argv: string[]): Promise<void> {
       return;
     }
     if (command === "prompt") {
-      if (!args[1]) throw new CliError("Usage: creed prompt <name> [--args JSON]", 2);
-      const rawArgs = optionValue(args, "--args");
-      const promptArgs = rawArgs ? JSON.parse(rawArgs) as Record<string, string> : undefined;
-      const result = await connection.client.getPrompt({ name: args[1], ...(promptArgs ? { arguments: promptArgs } : {}) });
+      const result = await connection.client.getPrompt({ name: args[1] as string, ...(promptArgs ? { arguments: promptArgs } : {}) });
       writeJson(result);
       return;
     }

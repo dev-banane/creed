@@ -95,3 +95,18 @@ test("CLI attribution keeps the newest use across active sessions", () => {
     codex: { lastSeenAt: "2026-07-14T13:00:00.000Z" },
   });
 });
+
+test("CLI attribution rejects malformed and unsupported roster identities", () => {
+  const statuses = resolveCliAgentStatuses(
+    new Set(["token", "token-with-hyphens"]),
+    [
+      { clientId: "cli-token-with-hyphens-codex", lastSeenAt: "2026-07-14T13:00:00.000Z" },
+      { clientId: "cli-token-unknown-agent", lastSeenAt: "2026-07-14T13:00:00.000Z" },
+      { clientId: "cli-other-token-codex", lastSeenAt: "2026-07-14T13:00:00.000Z" },
+    ],
+  );
+
+  assert.deepEqual(statuses, {
+    codex: { lastSeenAt: "2026-07-14T13:00:00.000Z" },
+  });
+});

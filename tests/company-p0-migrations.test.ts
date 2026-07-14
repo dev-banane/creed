@@ -88,7 +88,7 @@ test("mcp usage app writes carry the active creed scope", () => {
 });
 
 test("personal state loading is scoped to the personal creed id", () => {
-  assert.match(creedBackend, /const personalCreedId = await getPersonalCreedId\(db, user\.id\)/);
+  assert.match(creedBackend, /getPersonalCreedId\(db, user\.id\)/);
   assert.match(creedBackend, /\.from\("creed_sections"\)[\s\S]+\.eq\("creed_id", personalCreedId\)/);
   assert.match(creedBackend, /\.from\("creed_proposals"\)[\s\S]+\.eq\("creed_id", personalCreedId\)/);
   assert.match(creedBackend, /\.from\("creed_activity"\)[\s\S]+\.eq\("creed_id", personalCreedId\)/);

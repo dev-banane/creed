@@ -1,4 +1,7 @@
-import { getAgentIconKind } from "./agent-icon.ts";
+import {
+  CLI_ATTRIBUTABLE_AGENT_IDS,
+  getAgentIconKind,
+} from "./agent-icon.ts";
 
 type OAuthTokenIdentity = {
   id: string;
@@ -44,11 +47,14 @@ export function resolveCliAgentStatuses(
 ) {
   const agents: Record<string, { lastSeenAt: string | null }> = {};
   for (const row of rows) {
-    const tokenId = [...activeTokenIds].find((id) =>
-      row.clientId.startsWith(`cli-${id}-`),
+    if (!row.clientId.startsWith("cli-")) continue;
+    const agentIcon = CLI_ATTRIBUTABLE_AGENT_IDS.find((id) =>
+      row.clientId.endsWith(`-${id}`),
     );
-    if (!tokenId) continue;
-    const agentIcon = row.clientId.slice(`cli-${tokenId}-`.length);
+    if (!agentIcon) continue;
+    const suffix = `-${agentIcon}`;
+    const tokenId = row.clientId.slice(4, -suffix.length);
+    if (!activeTokenIds.has(tokenId)) continue;
     const existing = agents[agentIcon]?.lastSeenAt;
     if (!existing || (row.lastSeenAt && row.lastSeenAt > existing)) {
       agents[agentIcon] = { lastSeenAt: row.lastSeenAt };

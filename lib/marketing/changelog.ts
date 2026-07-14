@@ -20,6 +20,7 @@ export const changelog: ChangelogEntry[] = [
       "Install globally with npm install --global creed-cli or run it once with npx creed-cli.",
       "Interactive and one-shot commands for tools, resources, and prompts.",
       "JSON output for scripts and coding agents, with diagnostics kept on stderr.",
+      "Token-bound per-agent attribution keeps CLI status and last-seen times separate from MCP connections.",
       "Secure per-server credential storage, automatic token refresh, and OAuth revocation on logout.",
     ],
   },

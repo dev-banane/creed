@@ -107,7 +107,7 @@ new MCP tool appears in the CLI without a second implementation or release.
 npx creed-cli
 ```
 
-Agents get three verbs: read the file, propose an update, or direct-edit where you have granted it. A health dashboard tracks per-agent reads, writes, and errors.
+Agents get three verbs: read the file, propose an update, or direct-edit where you have granted it. The MCP health dashboard tracks per-agent reads, edits, proposals, and outcomes while keeping CLI activity separate.
 
 ## Stack
 

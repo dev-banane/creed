@@ -33,7 +33,10 @@ import { getSiteUrl, isSupabaseAdminConfigured } from "@/lib/supabase/env";
 import { readLatestQualityReport, validateQualityReport } from "@/lib/ai/quality";
 import type { CreedQualityReport } from "@/lib/ai/quality";
 import { markdownToRichHtml } from "@/lib/rich-text";
-import { getAgentIconKind } from "@/lib/agent-icon";
+import {
+  getAgentIconKind,
+  isCliAttributableAgentId,
+} from "@/lib/agent-icon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,25 +52,6 @@ const MCP_CORS_HEADERS = {
   // exposed; without this they can't discover where to start the OAuth flow.
   "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id",
 } as const;
-
-const CLI_AGENT_IDS = new Set([
-  "chatgpt",
-  "claude",
-  "grok",
-  "whirl",
-  "claudecode",
-  "codex",
-  "cursor",
-  "opencode",
-  "devin",
-  "replit",
-  "v0",
-  "factory",
-  "openclaw",
-  "hermes",
-  "manus",
-  "custom",
-]);
 
 // Injected into the model's context at connect time via the initialize
 // response. Carries the read-before-work / propose-narrowly contract so a
@@ -2241,18 +2225,17 @@ export async function POST(request: Request) {
     .get("x-creed-cli-agent")
     ?.trim()
     .toLowerCase();
-  const cliAgentIcon = getAgentIconKind(cliAgentHeader);
   if (
     getAgentIconKind(resolved.clientName) === "cli" &&
     cliAgentHeader &&
     state.creedId &&
-    CLI_AGENT_IDS.has(cliAgentHeader)
+    isCliAttributableAgentId(cliAgentHeader)
   ) {
     await recordCliAgentUsage(
       admin as never,
       userId,
       resolved.tokenId,
-      cliAgentIcon,
+      cliAgentHeader,
       state.creedId,
     );
   }

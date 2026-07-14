@@ -3,6 +3,34 @@
 // like the OAuth consent screen, can resolve a connecting client's icon too.
 import type { AgentIconKind } from "@/lib/creed-data";
 
+export const CLI_ATTRIBUTABLE_AGENT_IDS = [
+  "chatgpt",
+  "claude",
+  "grok",
+  "whirl",
+  "claudecode",
+  "codex",
+  "cursor",
+  "opencode",
+  "devin",
+  "replit",
+  "v0",
+  "factory",
+  "openclaw",
+  "hermes",
+  "manus",
+  "custom",
+] as const satisfies readonly AgentIconKind[];
+
+export type CliAttributableAgentId =
+  (typeof CLI_ATTRIBUTABLE_AGENT_IDS)[number];
+
+export function isCliAttributableAgentId(
+  value: string,
+): value is CliAttributableAgentId {
+  return (CLI_ATTRIBUTABLE_AGENT_IDS as readonly string[]).includes(value);
+}
+
 // Order matters: the first alias whose substring is found wins. More specific
 // multi-word names ("claude code") must come before their broader prefixes
 // ("claude"), and broad substrings ("v0") sit last so exact names match first.

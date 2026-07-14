@@ -157,6 +157,7 @@ export function ConnectionCard({
   onRevoke,
   onLogs,
   mode = "mcp",
+  statusOverride,
   showMenu = false,
 }: {
   connection: ConnectionItem;
@@ -170,6 +171,7 @@ export function ConnectionCard({
   // Jump to the Health section filtered to this agent.
   onLogs?: () => void;
   mode?: "mcp" | "cli";
+  statusOverride?: "checking" | "unavailable";
   showMenu?: boolean;
 }) {
   // Which button is showing its "Copied"/"Added" flash; primary and secondary
@@ -320,13 +322,17 @@ export function ConnectionCard({
                 )}
               />
               <span>
-                {mode === "cli"
-                  ? isConnected
-                    ? "Connected via CLI"
-                    : "Not connected via CLI"
-                  : isConnected
-                    ? "Connected via MCP"
-                    : "Not connected"}
+                {statusOverride === "checking"
+                  ? "Checking connection"
+                  : statusOverride === "unavailable"
+                    ? "Connection unavailable"
+                    : mode === "cli"
+                      ? isConnected
+                        ? "Connected via CLI"
+                        : "Not connected via CLI"
+                      : isConnected
+                        ? "Connected via MCP"
+                        : "Not connected"}
               </span>
               {isConnected && lastSeen ? (
                 <>
