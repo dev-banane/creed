@@ -315,7 +315,9 @@ export function ConnectionsScreen() {
                           : "bg-[var(--creed-border-strong)]",
                       )}
                     />
-                    <span>{cliConnected ? "Connected" : "Ready"}</span>
+                    <span>
+                      {cliConnected ? "Connected" : "Not connected via CLI"}
+                    </span>
                   </div>
                 </div>
               </div>

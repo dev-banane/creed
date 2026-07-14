@@ -306,8 +306,8 @@ export function ConnectionCard({
               <span>
                 {mode === "cli"
                   ? isConnected
-                    ? "CLI ready"
-                    : "Authorize on first run"
+                    ? "Connected via CLI"
+                    : "Not connected via CLI"
                   : isConnected
                     ? "Connected via MCP"
                     : "Not connected"}
