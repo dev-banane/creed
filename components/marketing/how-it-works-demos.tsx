@@ -89,6 +89,7 @@ export function CreateDemo() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.24, ease: EASE }}
+              className="lg:min-h-[164px]"
             >
               <div className="mt-4 text-[12px] font-medium text-[var(--creed-text-tertiary)]">
                 Question {step + 1} of {total}
@@ -116,7 +117,7 @@ export function CreateDemo() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.26, ease: EASE }}
-              className="flex flex-1 flex-col items-center justify-center gap-3 text-center lg:flex-none lg:py-7"
+              className="flex flex-1 flex-col items-center justify-center gap-3 text-center lg:min-h-[164px]"
             >
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#ECFDF5] text-[#16A34A] dark:bg-[#052e1a]/55 dark:text-[#4ade80]">
                 <Check className="h-4 w-4" />

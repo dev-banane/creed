@@ -81,6 +81,7 @@ export function ReviewPill({
   onEditOne = () => {},
   onDeleteOne = () => {},
   onJumpToProposal,
+  showActionLabels = false,
 }: {
   proposals: ReviewPillProposal[];
   onAcceptAll: () => void;
@@ -91,6 +92,8 @@ export function ReviewPill({
   onEditOne?: (proposal: Proposal) => void;
   onDeleteOne?: (proposalId: string) => void;
   onJumpToProposal: (proposal: Proposal) => void;
+  /** Keeps compact preview surfaces readable at mobile-sized widths. */
+  showActionLabels?: boolean;
 }) {
   // A member with only their own (unreviewable) proposals shouldn't see the
   // bulk Accept/Reject-all controls - those act on proposals you can review.
@@ -243,6 +246,7 @@ export function ReviewPill({
                   onRejectOne={onRejectOne}
                   onEditOne={onEditOne}
                   onDeleteOne={onDeleteOne}
+                  showActionLabels={showActionLabels}
                 />
               );
             }
@@ -445,6 +449,7 @@ function ReviewPillItem({
   onRejectOne,
   onEditOne,
   onDeleteOne,
+  showActionLabels,
 }: {
   item: ReviewPillProposal;
   stats: {
@@ -457,6 +462,7 @@ function ReviewPillItem({
   onRejectOne: (proposalId: string) => void;
   onEditOne: (proposal: Proposal) => void;
   onDeleteOne: (proposalId: string) => void;
+  showActionLabels: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const isDeleteProposal = item.proposal.draft.kind === "delete-section";
@@ -588,8 +594,14 @@ function ReviewPillItem({
                     }}
                     className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--creed-text-secondary)] transition-colors hover:bg-black/[0.06] hover:text-[var(--creed-text-primary)] dark:hover:bg-white/[0.08]"
                   >
-                    <X className="h-3.5 w-3.5 sm:hidden" />
-                    <span className="hidden sm:inline">Reject</span>
+                    {showActionLabels ? (
+                      "Reject"
+                    ) : (
+                      <>
+                        <X className="h-3.5 w-3.5 sm:hidden" />
+                        <span className="hidden sm:inline">Reject</span>
+                      </>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -608,8 +620,14 @@ function ReviewPillItem({
                           : "bg-[var(--creed-accent)] hover:bg-[var(--creed-accent-hover)]",
                     )}
                   >
-                    <Check className="h-3.5 w-3.5 sm:hidden" />
-                    <span className="hidden sm:inline">Accept</span>
+                    {showActionLabels ? (
+                      "Accept"
+                    ) : (
+                      <>
+                        <Check className="h-3.5 w-3.5 sm:hidden" />
+                        <span className="hidden sm:inline">Accept</span>
+                      </>
+                    )}
                   </button>
                 </div>
               ) : null}

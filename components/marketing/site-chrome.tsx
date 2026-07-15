@@ -184,7 +184,10 @@ export function MarketingHeader({
   // condenses into a translucent rounded bar (in-app surface material).
   const [isScrolled, setIsScrolled] = useState(false);
   const stickyChromeActive =
-    isScrolled || desktopDropdownPromoted || stickyDropdownSurface !== null;
+    isScrolled ||
+    desktopDropdownPromoted ||
+    stickyDropdownSurface !== null ||
+    mobileMenuOpen;
 
   const promoteDesktopDropdown = useCallback(() => {
     setDesktopDropdownPromoted(true);
@@ -915,9 +918,9 @@ function MobileNavRow({
   onNavigate: () => void;
 }) {
   return (
-    // Fixed height keeps an expanded group from moving the other navigation
-    // rows. Its links overflow horizontally inside the shared header surface.
-    <div className="flex h-9 items-center gap-2">
+    // Fixed width and clipping keep the horizontal sub-navigation inside the
+    // rounded mobile menu surface instead of letting it pass over the card.
+    <div className="flex h-9 w-[calc(100vw-3rem)] max-w-[40rem] items-center justify-end gap-2 overflow-hidden">
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div

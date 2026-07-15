@@ -866,6 +866,7 @@ export function CreedAppDemo() {
                       onAcceptOne={acceptProposal}
                       onRejectOne={rejectProposal}
                       onJumpToProposal={(p) => jumpToSection(p.sectionId)}
+                      showActionLabels
                     />
                   </div>
                 ) : null}

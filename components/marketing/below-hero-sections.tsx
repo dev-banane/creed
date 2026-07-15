@@ -274,7 +274,7 @@ function WhyUseItSection() {
         {WHY_USE_IT_STATS.map((stat) => (
           <article
             key={stat.label}
-            className="flex h-full min-h-[250px] flex-col rounded-xl bg-[var(--creed-surface)] p-6 md:p-7"
+            className="flex h-auto min-h-0 flex-col rounded-xl bg-[var(--creed-surface)] p-6 md:h-full md:min-h-[250px] md:p-7"
           >
             <div
               className="text-[4rem] font-semibold leading-[0.9] tracking-[-0.045em] md:text-[5.25rem]"
