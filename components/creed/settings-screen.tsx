@@ -178,7 +178,7 @@ function PersonalSettingsScreen() {
   const [aiSettings, setAiSettings] = useState<PublicAiSettings>({
     provider: "openrouter",
     keyStatus: "missing",
-    aiMode: "credits",
+    aiMode: "byok",
   });
   const [aiKeyDraft, setAiKeyDraft] = useState("");
   const [aiSaving, setAiSaving] = useState(false);

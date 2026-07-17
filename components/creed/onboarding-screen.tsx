@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowRightIcon } from "@/components/ui/arrow-right";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreedWordmark, IntegrationGlyph } from "@/components/creed/brand";
 import { useCreed } from "@/components/creed/creed-provider";
@@ -32,15 +33,8 @@ import {
 } from "@/lib/onboarding/compile";
 import { cn } from "@/lib/utils";
 
-// 10-step flow indexed 0-9: welcome / Q1 identity / explainer / Q2 goals /
-// explainer / Q3 preferences / explainer / prompt / paste / preview. Three open
-// questions feed a deterministic seed draft; three explainer slides woven
-// through them teach what Creed is. The user copies a prompt into any
 // assistant, which returns a markdown Creed they paste back. No MCP in
-// onboarding - the agent connection is set up later, from the app. Each step
-// picks an accent for the top progress bar so the colour tracks where the user
-// is in the flow.
-const TOTAL_STEPS = 10;
+const TOTAL_STEPS = 11;
 const WELCOME_STEP = 0;
 const Q1_STEP = 1;
 const EXPLAINER_A_STEP = 2;
@@ -51,6 +45,7 @@ const EXPLAINER_C_STEP = 6;
 const PROMPT_STEP = 7;
 const PASTE_STEP = 8;
 const PREVIEW_STEP = 9;
+const KEY_STEP = 10;
 
 const stepAccentMap = [
   accentColorMap.identity, // 0 welcome
@@ -63,7 +58,13 @@ const stepAccentMap = [
   "#2563EB", // 7 prompt
   accentColorMap.identity, // 8 paste
   accentColorMap.identity, // 9 preview
+  "#2563EB", // 10 API key
 ];
+
+function looksLikeApiKey(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length >= 20 && /^[A-Za-z0-9._-]+$/.test(trimmed);
+}
 
 export function OnboardingScreen({
   initialStage,
@@ -114,6 +115,27 @@ export function OnboardingScreen({
       router.replace("/file");
     }
   }, [router, step, composed]);
+
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [keySaving, setKeySaving] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [keyLastFour, setKeyLastFour] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (step !== KEY_STEP) return;
+    let active = true;
+    fetch("/api/app/ai/settings")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { settings?: { keyLastFour?: string } } | null) => {
+        if (active && data?.settings?.keyLastFour) {
+          setKeyLastFour(data.settings.keyLastFour);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [step]);
 
   const handleContinue = useCallback(async () => {
     if (step === EXPLAINER_C_STEP) {
@@ -233,10 +255,39 @@ export function OnboardingScreen({
     };
   }, [claiming, step, handleContinue]);
 
-  function handleFinish() {
+  async function handleFinish() {
+    const trimmedKey = apiKeyDraft.trim();
+    if (step === KEY_STEP && trimmedKey) {
+      if (!looksLikeApiKey(trimmedKey)) {
+        setKeyError("That doesn't look like a valid OpenRouter key.");
+        return;
+      }
+      setKeySaving(true);
+      try {
+        const res = await fetch("/api/app/ai/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: trimmedKey }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          setKeyError(data.error || "Could not save that key. Try again.");
+          setKeySaving(false);
+          return;
+        }
+      } catch {
+        setKeyError("Could not save that key. Check your connection.");
+        setKeySaving(false);
+        return;
+      }
+    }
     // The Creed is persisted server-side (the paste-compose endpoint wrote it),
     // so use a full navigation: /file reloads from server state and renders the
     // composed Creed rather than the provider's possibly-stale seed.
+    window.location.href = "/file";
+  }
+
+  function handleSkipKeyStep() {
     window.location.href = "/file";
   }
 
@@ -493,6 +544,60 @@ export function OnboardingScreen({
                       </AnimatedBlock>
                     </div>
                   ) : null}
+
+                  {step === KEY_STEP ? (
+                    <div className="text-center">
+                      <AnimatedBlock index={0}>
+                        <AnimatedHeadline
+                          text="Connect your OpenRouter key."
+                          className="t-section justify-center text-[var(--creed-text-primary)]"
+                        />
+                      </AnimatedBlock>
+                      <AnimatedBlock index={1}>
+                        <p className="t-lede mx-auto mt-6 max-w-2xl text-[var(--creed-text-tertiary)]">
+                          Creedom runs on your own OpenRouter key, at your own cost, never a
+                          platform fee. Paste one below, or skip and add it later in Settings.
+                        </p>
+                      </AnimatedBlock>
+                      <AnimatedBlock index={2}>
+                        <div className="mx-auto mt-10 max-w-[700px] rounded-3xl border border-[var(--creed-border)] bg-[var(--creed-surface)] p-4 text-left">
+                          <Input
+                            data-disable-continue="true"
+                            type="password"
+                            value={apiKeyDraft}
+                            onChange={(event) => {
+                              setApiKeyDraft(event.target.value);
+                              if (keyError) setKeyError(null);
+                            }}
+                            placeholder={
+                              keyLastFour ? `Saved key ending in ${keyLastFour}` : "sk-or-..."
+                            }
+                            className={cn(
+                              "h-11 rounded-xl px-4 text-[14px]",
+                              keyError
+                                ? "border-[#DC2626] focus-visible:border-[#DC2626] focus-visible:ring-[#DC2626]/15"
+                                : "border-[var(--creed-border)]"
+                            )}
+                          />
+                          {keyError ? (
+                            <p className="mt-2 text-[13px] text-[#DC2626]">{keyError}</p>
+                          ) : null}
+                          <p className="mt-3 text-[13px] text-[var(--creed-text-tertiary)]">
+                            Get one free at{" "}
+                            <a
+                              href="https://openrouter.ai/keys"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline underline-offset-2 hover:text-[var(--creed-text-primary)]"
+                            >
+                              openrouter.ai/keys
+                            </a>
+                            .
+                          </p>
+                        </div>
+                      </AnimatedBlock>
+                    </div>
+                  ) : null}
                 </StepFrame>
               </motion.div>
             </AnimatePresence>
@@ -546,14 +651,30 @@ export function OnboardingScreen({
               </Button>
             </div>
           ) : (
-            <Button
-              style={{ borderRadius: "0.875rem" }}
-              className="bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-              onClick={handleFinish}
-            >
-              Go to my Creed
-              <ArrowRightIcon className="h-4 w-4" size={16} />
-            </Button>
+            <div className="flex items-center gap-3">
+              {step === KEY_STEP && !keySaving ? (
+                <button
+                  type="button"
+                  onClick={handleSkipKeyStep}
+                  className="text-sm text-[var(--creed-text-secondary)] transition-colors duration-150 hover:text-[var(--creed-text-primary)]"
+                >
+                  Skip for now
+                </button>
+              ) : null}
+              <Button
+                style={{ borderRadius: "0.875rem" }}
+                className="bg-[var(--creed-text-primary)] px-5 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
+                onClick={() => void handleFinish()}
+                disabled={keySaving}
+              >
+                {keySaving ? "Saving" : "Go to my Creed"}
+                {keySaving ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRightIcon className="h-4 w-4" size={16} />
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </div>

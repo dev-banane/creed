@@ -69,7 +69,7 @@ export function buildPublicAiSettings(row?: AiSettingsRow | null): PublicAiSetti
   return {
     provider: "openrouter",
     keyStatus: row?.key_status ?? "missing",
-    aiMode: row?.ai_mode ?? "credits",
+    aiMode: row?.ai_mode ?? "byok",
     keyLastFour: row?.api_key_last_four ?? undefined,
     lastValidatedAt: row?.last_validated_at ?? undefined,
   };
@@ -112,7 +112,7 @@ export async function readCompanyPublicAiSettings(creedId: string): Promise<Publ
   return {
     provider: "openrouter",
     keyStatus: row?.key_status === "present" ? "valid" : "missing",
-    aiMode: row?.ai_mode ?? "credits",
+    aiMode: row?.ai_mode ?? "byok",
     keyLastFour: row?.api_key_last_four ?? undefined,
   };
 }
@@ -134,7 +134,7 @@ export async function upsertAiSettings({
   const existing = await readAiSettings(db, userId);
   const now = new Date().toISOString();
   const trimmedKey = apiKey?.trim();
-  const nextMode: AiMode = aiMode ?? existing?.ai_mode ?? "credits";
+  const nextMode: AiMode = aiMode ?? existing?.ai_mode ?? "byok";
 
   // No key-required guard here. This endpoint also handles the credits/byok
   // toggle, which involves no key. The "you need a key" check happens at

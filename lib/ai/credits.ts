@@ -86,16 +86,6 @@ type CreditRow = {
   created_at: string;
 };
 
-export function getOpenRouterPlatformKey(): string {
-  const value = process.env.OPENROUTER_PLATFORM_KEY?.trim();
-  if (!value) {
-    // Credits-specific copy. Never surface the BYOK "paste a key" error to a
-    // credits user, who has no key to paste.
-    throw new Error("Credits are temporarily unavailable");
-  }
-  return value;
-}
-
 function microToUsd(micro: number) {
   return micro / MICRO_PER_USD;
 }
@@ -311,70 +301,19 @@ async function applyGrant(userId: string, allowance: Allowance): Promise<number 
   return Number.isFinite(balance) ? balance : null;
 }
 
-async function readBalanceMicro(
-  client: unknown,
-  userId: string
-): Promise<{ granted: number; purchased: number; total: number }> {
-  const db = client as SupabaseLikeClient;
-  const { data, error } = await db
-    .from("creed_credits")
-    .select("granted_micro_usd, purchased_micro_usd")
-    .eq("creed_id", await personalCreedId(userId))
-    .maybeSingle();
-  if (error) {
-    log.error("credit_balance_read_failed", { userId, message: error.message });
-    throw new Error("Credits are temporarily unavailable");
-  }
-  const row = data as
-    | { granted_micro_usd?: number | string; purchased_micro_usd?: number | string }
-    | null;
-  const granted = row ? Number(row.granted_micro_usd) || 0 : 0;
-  const purchased = row ? Number(row.purchased_micro_usd) || 0 : 0;
-  return { granted, purchased, total: granted + purchased };
-}
-
-// Pick the key + model for an AI call based on the user's ai_mode. The model is
-// server-selected per feature (hidden from the user) in BOTH modes. BYOK reuses
-// the user's own key at no markup. Credits validates the platform key, refreshes
-// the monthly allowance just-in-time, then gates on a positive combined balance.
-// The balance is read via the admin client so the money decision never depends
-// on RLS being applied to the caller's client.
 export async function resolveAiCredential(
   client: unknown,
   userId: string,
   feature: AiFeature
 ): Promise<ResolvedAiCredential> {
   const row = await readAiSettings(client, userId);
-  const mode: AiMode = row?.ai_mode === "byok" ? "byok" : "credits";
   const modelId = getFeatureModelId(feature);
 
-  if (mode === "byok") {
-    const encryptedKey = row?.encrypted_api_key;
-    if (!encryptedKey || row?.key_status !== "valid") {
-      throw new Error("Add an OpenRouter key in Settings");
-    }
-    return { apiKey: decryptSecret(encryptedKey), modelId, mode: "byok" };
+  const encryptedKey = row?.encrypted_api_key;
+  if (!encryptedKey || row?.key_status !== "valid") {
+    throw new Error("Add an OpenRouter key in Settings");
   }
-
-  const apiKey = getOpenRouterPlatformKey();
-  // No allowance means no active entitlement (refunded, canceled, lapsed, or no
-  // plan). App access is already gated on the same condition; blocking here
-  // closes the direct-API path so platform credits can't be spent without a live
-  // plan. Purchased credits aren't lost - they become spendable again on renewal.
-  const allowance = await resolveAllowance(userId);
-  if (!allowance) {
-    throw new Error("Out of credits");
-  }
-  // grant_allowance returns the post-grant combined balance, so gate on that and
-  // only fall back to a direct read if the grant RPC failed.
-  const totalMicro =
-    (await applyGrant(userId, allowance)) ??
-    (await readBalanceMicro(getSupabaseAdminClient(), userId)).total;
-  if (totalMicro <= 0) {
-    throw new Error("Out of credits");
-  }
-
-  return { apiKey, modelId, mode: "credits" };
+  return { apiKey: decryptSecret(encryptedKey), modelId, mode: "byok" };
 }
 
 // Deduct realCost x markup after a successful call, draining the granted bucket
@@ -561,10 +500,6 @@ async function applyCompanyGrant(creedId: string, allowance: Allowance): Promise
 
 type CompanyAiSettingsRow = { ai_mode?: string; encrypted_openrouter_key?: string | null; key_status?: string };
 
-// Resolve the AI key + model for a company AI call. Owner-set BYOK runs on the
-// company key at no markup; otherwise credits gate on the pooled balance after a
-// just-in-time monthly grant. Returns the credential; throws a friendly error
-// when the company is out of credits or BYOK is not configured.
 export async function resolveCompanyAiCredential(
   creedId: string,
   feature: AiFeature
@@ -578,34 +513,10 @@ export async function resolveCompanyAiCredential(
     .maybeSingle();
   const settings = data as CompanyAiSettingsRow | null;
 
-  if (settings?.ai_mode === "byok") {
-    if (!settings.encrypted_openrouter_key || settings.key_status !== "present") {
-      throw new Error("Ask your owner to add a company OpenRouter key");
-    }
-    return { apiKey: decryptSecret(settings.encrypted_openrouter_key), modelId, mode: "byok" };
+  if (!settings?.encrypted_openrouter_key || settings.key_status !== "present") {
+    throw new Error("Ask your owner to add a company OpenRouter key");
   }
-
-  const apiKey = getOpenRouterPlatformKey();
-  const allowance = await resolveCompanyAllowance(creedId);
-  if (!allowance) {
-    throw new Error("Out of credits");
-  }
-  // Grant just-in-time, then gate on the combined balance the RPC reports; fall
-  // back to a direct read if the grant failed. Mirrors resolveAiCredential.
-  let totalMicro = await applyCompanyGrant(creedId, allowance);
-  if (totalMicro === null) {
-    const { data: bal } = await admin
-      .from("creed_credits")
-      .select("granted_micro_usd, purchased_micro_usd")
-      .eq("creed_id", creedId)
-      .maybeSingle();
-    const b = bal as { granted_micro_usd?: number | string; purchased_micro_usd?: number | string } | null;
-    totalMicro = (Number(b?.granted_micro_usd) || 0) + (Number(b?.purchased_micro_usd) || 0);
-  }
-  if (totalMicro <= 0) {
-    throw new Error("Out of credits");
-  }
-  return { apiKey, modelId, mode: "credits" };
+  return { apiKey: decryptSecret(settings.encrypted_openrouter_key), modelId, mode: "byok" };
 }
 
 // Deduct a company AI call from the pooled balance, attributed to the spender.
