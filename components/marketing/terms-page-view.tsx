@@ -71,15 +71,8 @@ const sections: TermsSection[] = [
     id: "payments",
     title: "6. Payments",
     paragraphs: [
-      "Creedom is currently offered free of charge. In future, Creedom may be offered as a one-time purchase or under other paid access terms.",
-      "If and when paid access is introduced:",
+      "Creedom is free and self-hosted. There is no purchase, subscription, or payment processing involved in using it.",
     ],
-    bullets: [
-      "pricing will be shown clearly before purchase",
-      "payments will be processed by Stripe or another payment provider",
-      "payment card details will not be stored directly by Creedom",
-    ],
-    note: "Unless required by law, payments are non-refundable.",
   },
   {
     id: "commercial-use",
@@ -90,7 +83,7 @@ const sections: TermsSection[] = [
     id: "third-party",
     title: "8. Third-party services",
     paragraphs: [
-      "Creedom relies on third-party services to operate parts of the product, including services for hosting, authentication, payments, and AI processing.",
+      "Creedom relies on third-party services to operate parts of the product, including services for hosting, authentication, and AI processing.",
       "Creedom is not responsible for outages, errors, or changes caused by third-party providers.",
       "Your use of those services may also be subject to their own terms and policies.",
     ],

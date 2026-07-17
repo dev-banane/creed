@@ -154,10 +154,6 @@ export function minPermission(
 }
 
 /**
- * Derive the access state of a company Creed from its billing status.
- * `past_due` still grants full access (Stripe's smart-retry grace window) but
- * warrants a fix-billing banner. `frozen` is read-only: no writes, proposals,
- * invites, or AI, but data is retained and recovers when billing is fixed.
  */
 export function deriveCompanyAccessState(
   status: string | null | undefined,

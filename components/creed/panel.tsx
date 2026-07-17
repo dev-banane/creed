@@ -35,7 +35,6 @@ import { CompassIcon } from "@/components/ui/compass";
 import { ConnectIcon } from "@/components/ui/connect";
 import { ContrastIcon } from "@/components/ui/contrast";
 import { CpuIcon } from "@/components/ui/cpu";
-import { CreditCardIcon } from "@/components/ui/credit-card";
 import { DatabaseIcon } from "@/components/ui/database";
 import { DownloadIcon } from "@/components/ui/download";
 import { FileTextIcon } from "@/components/ui/file-text";
@@ -87,7 +86,6 @@ type PanelProps = {
   onFileSection: (sectionId: string) => void;
   onFileProposal: (proposalId: string) => void;
   onAddSection: () => void;
-  onOpenBilling: () => void;
   onOpenPush: () => void;
   onSetActivity: (open: boolean) => void;
 };
@@ -268,7 +266,6 @@ export function CreedPanel({
   onFileSection,
   onFileProposal,
   onAddSection,
-  onOpenBilling,
   onOpenPush,
   onSetActivity,
 }: PanelProps) {
@@ -577,15 +574,6 @@ export function CreedPanel({
         run: () => onSetActivity(true),
       },
       {
-        id: "action:add-credits",
-        label: "Add credits",
-        group: "Actions",
-        keywords: ["top up", "buy credits", "topup"],
-        icon: CreditCardIcon as AnimatedIconComponent,
-        run: () =>
-          goSettings({ scrollTo: "model-usage", openDialog: "add-credits" }),
-      },
-      {
         id: "action:credits-history",
         label: "Credits history",
         group: "Actions",
@@ -596,14 +584,6 @@ export function CreedPanel({
             scrollTo: "model-usage",
             openDialog: "credits-history",
           }),
-      },
-      {
-        id: "action:billing",
-        label: "Billing",
-        group: "Actions",
-        keywords: ["subscription", "plan", "invoice", "stripe"],
-        icon: CreditCardIcon as AnimatedIconComponent,
-        run: () => onOpenBilling(),
       },
       {
         id: "action:export-creed",
@@ -650,7 +630,6 @@ export function CreedPanel({
     onAddSection,
     onFileProposal,
     onFileSection,
-    onOpenBilling,
     onOpenPush,
     onSetActivity,
     pendingProposals,
@@ -730,11 +709,8 @@ export function CreedPanel({
             intent.scrollTo = intent.scrollTo ?? "model-usage";
             break;
           case "open-dialog":
-            if (action.target === "billing") onOpenBilling();
-            else {
-              intent.openDialog = action.target;
-              intent.scrollTo = intent.scrollTo ?? "model-usage";
-            }
+            intent.openDialog = action.target;
+            intent.scrollTo = intent.scrollTo ?? "model-usage";
             break;
           case "file-section":
             onFileSection(action.target);
@@ -796,7 +772,6 @@ export function CreedPanel({
       onAddSection,
       onFileProposal,
       onFileSection,
-      onOpenBilling,
       onOpenPush,
       onSetActivity,
       router,
@@ -1454,14 +1429,11 @@ export function CreedPanel({
                             onClick={() => {
                               close();
                               clearAgentRun();
-                              goSettings({
-                                scrollTo: "model-usage",
-                                openDialog: "add-credits",
-                              });
+                              goSettings({ scrollTo: "model-usage" });
                             }}
                             className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2 text-left text-[14px] font-medium text-[var(--creed-text-secondary)] transition-colors duration-150 hover:bg-accent hover:text-accent-foreground"
                           >
-                            Add credits
+                            View usage
                           </button>
                         ) : (
                           <button

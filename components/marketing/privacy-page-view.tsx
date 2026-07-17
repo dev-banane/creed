@@ -52,7 +52,6 @@ const sections: PrivacySection[] = [
       "connection metadata",
       "connection tokens",
     ],
-    note: "Creedom does not store payment card details directly. Payments are handled by Stripe.",
   },
   {
     id: "collection",
@@ -61,7 +60,6 @@ const sections: PrivacySection[] = [
       "directly from you when you sign in, complete onboarding, edit your Creedom, manage connections, or use account features",
       "from Google Auth when basic account information is provided during sign-in, such as your name, email address, and profile image",
       "from connected agent activity when an agent reads Creedom through a tokenised endpoint or submits a proposal back through a tokenised endpoint",
-      "from Stripe when payment-related events need to be confirmed for billing or account administration",
     ],
     paragraphs: [
       "When you run an AI feature such as quality analysis, the relevant parts of your Creedom are sent to OpenRouter to generate the result. On credits this runs on Creedom's platform key; with your own key (BYOK) it runs on your key.",
@@ -71,7 +69,7 @@ const sections: PrivacySection[] = [
     id: "use",
     title: "Why Creedom uses information",
     paragraphs: [
-      "Creedom uses personal information to provide and run the service, including to create and manage accounts, authenticate users, generate and maintain Creedom files, run AI features such as quality analysis, support connected agent reads and proposals, store proposal and activity history, manage tokens and connections, process payments, respond to support requests, and comply with legal obligations.",
+      "Creedom uses personal information to provide and run the service, including to create and manage accounts, authenticate users, generate and maintain Creedom files, run AI features such as quality analysis, support connected agent reads and proposals, store proposal and activity history, manage tokens and connections, respond to support requests, and comply with legal obligations.",
       "Under UK GDPR, the main lawful bases Creedom is likely to rely on are performance of a contract where processing is needed to provide the service you asked for, legitimate interests where processing is needed to run and secure the service in a proportionate way, and legal obligation where processing is needed to comply with applicable law.",
       "Where a specific activity depends on consent, Creedom will rely on consent for that activity.",
     ],
@@ -94,17 +92,9 @@ const sections: PrivacySection[] = [
     id: "sharing",
     title: "Sharing with service providers",
     paragraphs: [
-      "Creedom uses third-party service providers to operate the service. At the time of writing, these include Supabase for database and auth-related backend services, Vercel for hosting, Google Auth for sign-in, OpenRouter for AI features such as quality analysis, and Stripe for payments.",
+      "Creedom uses third-party service providers to operate the service. At the time of writing, these include Supabase for database and auth-related backend services, Vercel for hosting, Google Auth for sign-in, and OpenRouter for AI features such as quality analysis.",
       "Creedom shares information with these providers only as needed to operate the service.",
       "Creedom does not sell your personal information. Creedom does not use your content to train models.",
-    ],
-  },
-  {
-    id: "payments",
-    title: "Payments",
-    paragraphs: [
-      "Payments are handled by Stripe. Creedom does not directly store your full payment card details.",
-      "Creedom may receive limited payment-related information needed to confirm payment status, manage access, and handle account administration.",
     ],
   },
   {

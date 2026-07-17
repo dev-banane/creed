@@ -65,7 +65,6 @@ import { SearchableSelect } from "@/components/creed/searchable-select";
 import { useCreed } from "@/components/creed/creed-provider";
 import { CompanySettings } from "@/components/creed/company-settings";
 import {
-  clearSettingsCreditsCache,
   clearSettingsOpenRouterBalanceCache,
   clearSettingsRepoCache,
   clearSettingsUsageCache,
@@ -88,7 +87,6 @@ import {
   type RepoOption,
   type VersionControlStatus,
 } from "@/components/creed/settings-preload";
-import { AddCreditsDialog } from "@/components/creed/add-credits-dialog";
 import { CreditsHistoryDialog } from "@/components/creed/credits-history-dialog";
 import { LOW_ALLOWANCE_RATIO } from "@/lib/ai/credit-config";
 import { AI_FEATURES, featureMeta } from "@/lib/ai/features";
@@ -190,7 +188,6 @@ function PersonalSettingsScreen() {
   const [usage, setUsage] = useState<AiUsageSummary | null>(null);
   const [credits, setCredits] = useState<CreditsState | null>(null);
   const [openRouterBalance, setOpenRouterBalance] = useState<OpenRouterBalance | null>(null);
-  const [addCreditsOpen, setAddCreditsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const canSaveAiKey = looksLikeApiKey(aiKeyDraft) && !aiSaving;
 
@@ -492,9 +489,7 @@ function PersonalSettingsScreen() {
       if (intent.usageRange) {
         setUsageRange(intent.usageRange);
       }
-      if (intent.openDialog === "add-credits") {
-        setAddCreditsOpen(true);
-      } else if (intent.openDialog === "credits-history") {
+      if (intent.openDialog === "credits-history") {
         setHistoryOpen(true);
       }
       const key = intent.scrollTo;
@@ -821,15 +816,6 @@ function PersonalSettingsScreen() {
     }
   }
 
-  async function refreshCredits() {
-    clearSettingsCreditsCache();
-    try {
-      setCredits(await loadSettingsCredits());
-    } catch {
-      // Keep the current balance on a transient failure.
-    }
-  }
-
   return (
     <>
       <div className="h-full overflow-y-auto bg-[var(--creed-surface)] creed-scrollbar">
@@ -1148,12 +1134,6 @@ function PersonalSettingsScreen() {
                             Running low
                           </span>
                         ) : null}
-                        <Button
-                          className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-                          onClick={() => setAddCreditsOpen(true)}
-                        >
-                          Add credits
-                        </Button>
                       </div>
                     </div>
                   ) : (
@@ -1193,12 +1173,6 @@ function PersonalSettingsScreen() {
               </div>
             </div>
 
-            <AddCreditsDialog
-              open={addCreditsOpen}
-              onOpenChange={setAddCreditsOpen}
-              currentBalanceUsd={credits?.balanceUsd ?? 0}
-              onToppedUp={() => void refreshCredits()}
-            />
             <CreditsHistoryDialog
               open={historyOpen}
               onOpenChange={setHistoryOpen}

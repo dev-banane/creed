@@ -5,9 +5,6 @@
 //   - /llms.txt and /llms-full.txt
 //
 // Keeping every price in one module means a crawler, an AI answer engine, and a
-// human reading the cards can never be quoted three different numbers. These
-// are list prices shown to the buyer; the actual charge always uses the live
-// Stripe price. Keep them in step with the Stripe prices and lib/seat-config.ts.
 
 export type BillingCycle = "monthly" | "yearly" | "lifetime";
 

@@ -13,6 +13,11 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    date: "2026-07-17",
+    title: "Creedom is free and self-hosted",
+    body: "Billing is gone. Every signed-in account now gets the full app, including the Company plan with unlimited seats, no purchase or subscription required.",
+  },
+  {
     date: "2026-07-14",
     title: "Creedom CLI",
     body: "Creedom now has a first-party terminal client on npm. It uses the same browser OAuth flow and mirrors the live MCP server, so every current and future Creedom tool is available from the terminal without a separate implementation.",

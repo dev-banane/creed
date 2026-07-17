@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 const ROLES = [
   {
     name: "Owner",
-    body: "Manages billing, members, and content. Every team has one.",
+    body: "Manages members and content. Every team has one.",
     fill: "bg-[#EFF6FF] dark:bg-[#102341]/60",
     text: "text-[var(--creed-accent-hover)] dark:text-[#60A5FA]",
   },
@@ -144,8 +144,8 @@ export function CompanyPageView() {
             Company pricing
           </h2>
           <p className="mt-3 max-w-2xl text-[16px] leading-7 text-[var(--creed-text-secondary)]">
-            Every Company plan includes 10 seats and supports BYOK. Extra seats
-            are available, and billing is owner-only.
+            The Company plan is free and self-hosted, with unlimited seats and
+            BYOK support.
           </p>
           <div className="mt-8 grid items-start gap-4 sm:grid-cols-3">
             {(["monthly", "yearly", "lifetime"] as const).map((cycle) => {
@@ -178,7 +178,7 @@ export function CompanyPageView() {
               href="/pricing"
               className="text-[15px] font-medium text-[var(--creed-accent)] transition-colors hover:text-[var(--creed-accent-hover)]"
             >
-              Full pricing and checkout
+              Full pricing
             </Link>
           </div>
         </section>

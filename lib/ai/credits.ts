@@ -249,10 +249,6 @@ async function personalCreedId(userId: string): Promise<string> {
   return id;
 }
 
-// Map the user's entitlement to their granted allowance + the period key that
-// resets it. Reads the entitlement directly via the admin client (no dependency
-// on lib/stripe, which would create an import cycle). Returns null when the plan
-// grants no allowance (no row, refunded, or canceled).
 async function resolveAllowance(userId: string): Promise<Allowance | null> {
   const admin = getSupabaseAdminClient() as unknown as SupabaseLikeClient;
   const { data, error } = await admin
@@ -644,9 +640,6 @@ export async function deductCompanyCredits({
   return { chargedMicroUsd, balanceUsd: Number.isFinite(balanceMicro) ? balanceMicro / MICRO_PER_USD : 0 };
 }
 
-// Idempotent money-in (top-up), called by the Stripe webhook + the confirm route
-// after a PaymentIntent succeeds. Lands in the PURCHASED bucket; the RPC dedupes
-// on the PaymentIntent id, so a Stripe redelivery is a no-op.
 export async function creditTopup({
   userId,
   amountMicro,

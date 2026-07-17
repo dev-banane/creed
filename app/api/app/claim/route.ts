@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { CreedSection } from "@/lib/creed-data";
-import { createBlankCreedState, persistCreedState } from "@/lib/creed-backend";
+import { createBlankCreedState, loadCreedState, persistCreedState } from "@/lib/creed-backend";
 import { ensurePersonalCreedId } from "@/lib/creed-context";
+import { getPersonalCreedId } from "@/lib/creed-membership";
 import { requireApiAuth } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit-log";
 
@@ -73,6 +74,17 @@ export async function POST(request: Request) {
       { error: "Missing or invalid starter sections" },
       { status: 400 }
     );
+  }
+
+  const existingCreedId = await getPersonalCreedId(auth.supabase, auth.user.id);
+  if (existingCreedId) {
+    const current = await loadCreedState(auth.supabase, auth.user, {
+      proposalLimit: 1,
+      activityLimit: 1,
+    });
+    if (current.state.sections.length > 0) {
+      return NextResponse.json({ ok: true, alreadyClaimed: true });
+    }
   }
 
   const nextState = createBlankCreedState(auth.user);

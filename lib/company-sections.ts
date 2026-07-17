@@ -4,10 +4,8 @@ import type { User } from "@supabase/supabase-js";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
 import { getCreedRole } from "@/lib/creed-membership";
-import { getCompanyBilling } from "@/lib/company-billing";
 import {
   resolveSectionPermission,
-  deriveCompanyAccessState,
   canApproveProposal,
   canManageSectionsLifecycle,
   minPermission,
@@ -86,10 +84,9 @@ function admin(): SupabaseLikeClient {
 }
 
 async function companyAccess(
-  creedId: string,
+  _creedId: string,
 ): Promise<"active" | "past_due" | "frozen"> {
-  const billing = await getCompanyBilling(creedId);
-  return deriveCompanyAccessState(billing?.status);
+  return "active";
 }
 
 function memberName(user: User): string {

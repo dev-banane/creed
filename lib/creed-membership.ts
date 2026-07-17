@@ -1,8 +1,7 @@
 import "server-only";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
 import type { CreedRole, CreedType } from "@/lib/creed-permissions";
-import { deriveCompanyAccessState, type CompanyAccessState } from "@/lib/creed-permissions";
-import { hasActiveEntitlement } from "@/lib/stripe";
+import type { CompanyAccessState } from "@/lib/creed-permissions";
 
 // Membership + Creed-listing helpers.
 //
@@ -103,16 +102,6 @@ export async function listUserCreeds(
       return a.name.localeCompare(b.name);
     });
 
-  // A personal Creed is only real when the user actually holds a personal plan.
-  // The company migration backfilled a personal creeds row for every existing
-  // user, so without this an invited company member would see (and be routed
-  // into) a phantom personal Creed they never paid for - the personal Creed is
-  // reserved for the personal plan. Company Creeds are always included. Only
-  // pay the entitlement read when a personal row is actually present.
-  const hasPersonal = mapped.some((c) => c.type === "personal");
-  if (hasPersonal && !(await hasActiveEntitlement(client, userId))) {
-    return mapped.filter((c) => c.type !== "personal");
-  }
   return mapped;
 }
 
@@ -150,35 +139,24 @@ export async function getPersonalCreedId(
 }
 
 /**
- * The access state of a company Creed from its billing row, or null when the
- * Creed has no billing row (personal Creeds, or a company shell before
- * checkout completes). Read via the admin client (billing is owner-only RLS).
  */
 export async function getCompanyAccessState(
-  client: unknown,
-  creedId: string
+  _client: unknown,
+  _creedId: string
 ): Promise<CompanyAccessState | null> {
-  const db = client as SupabaseLikeClient;
-  const { data, error } = (await db
-    .from("creed_company_billing")
-    .select("status")
-    .eq("creed_id", creedId)
-    .maybeSingle()) as { data: { status: string } | null; error: unknown };
-  if (error || !data) return null;
-  return deriveCompanyAccessState(data.status);
+  return "active";
 }
 
 /**
- * Does the user hold membership on at least one company Creed whose billing
- * currently grants access (active/past_due, or lifetime paid)? Used by the app
- * gate so an invited member with no personal entitlement can still enter. Reads
- * membership under RLS via the passed client, then billing via the admin client
- * (billing rows are owner-only under RLS, so a non-owner member cannot read them
- * with their session client).
+ *
+ * Must filter to company-type Creeds: every user's OWN personal Creed also
+ * has a `creed_members` row (the owner membership inserted alongside it), so
+ * a plain `creed_members` lookup without the type join returns true for
+ * every onboarded user - not just company members - and skips the personal
+ * onboarding gate in the (creed-app) layout for everyone.
  */
 export async function hasCompanyAccess(
   client: unknown,
-  adminClient: unknown,
   userId: string
 ): Promise<boolean> {
   const db = client as SupabaseLikeClient;
@@ -188,15 +166,14 @@ export async function hasCompanyAccess(
     .eq("user_id", userId)) as { data: Array<{ creed_id: string }> | null; error: unknown };
   if (error || !memberRows || memberRows.length === 0) return false;
 
-  const admin = adminClient as SupabaseLikeClient;
   const ids = memberRows.map((row) => row.creed_id);
-  const { data: billingRows, error: billingError } = (await admin
-    .from("creed_company_billing")
-    .select("status")
-    .in("creed_id", ids)) as { data: Array<{ status: string }> | null; error: unknown };
-  if (billingError || !billingRows) return false;
+  const { data: creedRows, error: creedError } = (await db
+    .from("creeds")
+    .select("id, type")
+    .in("id", ids)) as { data: Array<{ id: string; type: CreedType }> | null; error: unknown };
+  if (creedError || !creedRows) return false;
 
-  return billingRows.some((row) => deriveCompanyAccessState(row.status) !== "frozen");
+  return creedRows.some((row) => row.type === "company");
 }
 
 export type { MemberRow, CreedRow };

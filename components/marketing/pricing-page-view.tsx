@@ -14,10 +14,6 @@ import {
   MarketingHeroBanner,
 } from "@/components/marketing/site-chrome";
 import { useLandingAuthState } from "@/components/marketing/use-landing-auth-state";
-import {
-  useStripeCheckout,
-  type CheckoutPlan,
-} from "@/components/marketing/use-stripe-checkout";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { GITHUB_URL } from "@/lib/branding";
 import {
@@ -26,6 +22,8 @@ import {
   type BillingCycle,
 } from "@/lib/marketing/pricing";
 import { cn } from "@/lib/utils";
+
+type PlanTier = "personal" | "company";
 
 type Feature = { label: string; included: boolean; star?: boolean };
 
@@ -97,7 +95,6 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
   const githubHref = GITHUB_URL ?? "https://github.com";
   const personal = PERSONAL_PRICING[cycle];
   const company = COMPANY_PRICING[cycle];
-  const billing = useBillingSummary();
 
   return (
     <div className="min-h-screen bg-[var(--creed-background)] text-[var(--creed-text-primary)]">
@@ -144,10 +141,7 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
               listCadence={personal.listCadence}
               tagline={personal.tagline}
               features={personalFeatures(cycle)}
-              cta={{ kind: "plan", plan: "personal", cycle }}
-              owned={Boolean(billing.personal?.paid)}
-              ownedTone="blue"
-              billing={billing}
+              cta={{ kind: "plan", plan: "personal" }}
             />
             <PricingCard
               name="Company"
@@ -158,10 +152,7 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
               listCadence={company.listCadence}
               tagline={company.tagline}
               features={companyFeatures(cycle)}
-              cta={{ kind: "plan", plan: "company", cycle }}
-              owned={Boolean(billing.companyOwner?.paid)}
-              ownedTone="amber"
-              billing={billing}
+              cta={{ kind: "plan", plan: "company" }}
             />
           </div>
 
@@ -232,7 +223,7 @@ type PricingCardCta =
       href: string;
       style: "solid" | "outline";
     }
-  | { kind: "plan"; plan: CheckoutPlan; cycle: BillingCycle }
+  | { kind: "plan"; plan: PlanTier }
   | { kind: "coming-soon"; label: string };
 
 function PricingCard({
@@ -245,9 +236,6 @@ function PricingCard({
   tagline,
   features,
   cta,
-  owned = false,
-  ownedTone = "blue",
-  billing,
 }: {
   name: string;
   nameClassName: string;
@@ -258,13 +246,9 @@ function PricingCard({
   tagline: string;
   features: Feature[];
   cta: PricingCardCta;
-  owned?: boolean;
-  ownedTone?: "blue" | "amber";
-  billing?: BillingSummary;
 }) {
   return (
     <div className="relative flex flex-col overflow-hidden rounded-xl bg-[var(--creed-surface)] p-6 md:p-7">
-      {owned ? <OwnedCorner tone={ownedTone} /> : null}
       <div>
         <div
           className={cn(
@@ -330,30 +314,9 @@ function PricingCard({
         ) : cta.kind === "coming-soon" ? (
           <ComingSoonCta label={cta.label} />
         ) : (
-          <PlanCta plan={cta.plan} cycle={cta.cycle} billing={billing} />
+          <PlanCta plan={cta.plan} />
         )}
       </div>
-    </div>
-  );
-}
-
-function OwnedCorner({ tone }: { tone: "blue" | "amber" }) {
-  const colorClassName =
-    tone === "amber"
-      ? "bg-[#F59E0B] dark:bg-[#F5A623]"
-      : "bg-[var(--creed-accent)]";
-  return (
-    <div
-      className={cn(
-        "pointer-events-none absolute right-0 top-0 h-[76px] w-[92px] rounded-tr-[20px]",
-        colorClassName,
-      )}
-      style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%)" }}
-    >
-      <Check
-        className="absolute right-[13px] top-[12px] h-6 w-6 text-white"
-        strokeWidth={3.2}
-      />
     </div>
   );
 }
@@ -468,246 +431,17 @@ function ComingSoonCta({ label }: { label: string }) {
   );
 }
 
-function useBillingPortal() {
-  const [opening, setOpening] = useState(false);
-
-  async function openPortal(opts: { scope: "personal" } | { scope: "company"; creedId: string }) {
-    if (opening) return;
-    setOpening(true);
-    try {
-      const res =
-        opts.scope === "company"
-          ? await fetch("/api/app/company/portal", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ creedId: opts.creedId }),
-            })
-          : await fetch("/api/stripe/portal", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || "Couldn't open billing");
-      }
-      window.location.href = data.url;
-    } catch {
-      setOpening(false);
-    }
-  }
-
-  return { openPortal, opening };
-}
-
-// Lightweight billing summary for the pricing CTAs. Composes the marketing
-// auth state with a single /api/stripe/status read so the cards can tell
-// owner / subscriber / unpaid / signed-out apart.
-type PlanBillingStatus = {
-  paid: boolean;
-  billingMode: string | null;
-  interval: string | null;
-  status: string | null;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-};
-
-type CompanyOwnerBillingStatus = PlanBillingStatus & {
-  creedId: string;
-  name: string;
-};
-
-type BillingSummary = {
-  authState: ReturnType<typeof useLandingAuthState>;
-  access: boolean;
-  billingMode: string | null;
-  personal?: PlanBillingStatus;
-  companyOwner: CompanyOwnerBillingStatus | null;
-};
-
-type CachedBillingSummary = Omit<BillingSummary, "authState">;
-
-const EMPTY_BILLING_SUMMARY: CachedBillingSummary = {
-  access: false,
-  billingMode: null,
-  companyOwner: null,
-};
-
-const BILLING_SUMMARY_CACHE_KEY = "creed:pricing-billing-summary";
-let cachedBillingSummary: CachedBillingSummary | null = null;
-
-function readCachedBillingSummary(): CachedBillingSummary | null {
-  if (cachedBillingSummary) return cachedBillingSummary;
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(BILLING_SUMMARY_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedBillingSummary;
-    cachedBillingSummary = parsed;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedBillingSummary(summary: CachedBillingSummary | null) {
-  cachedBillingSummary = summary;
-  if (typeof window === "undefined") return;
-  try {
-    if (summary) {
-      window.sessionStorage.setItem(BILLING_SUMMARY_CACHE_KEY, JSON.stringify(summary));
-    } else {
-      window.sessionStorage.removeItem(BILLING_SUMMARY_CACHE_KEY);
-    }
-  } catch {
-    /* storage can be unavailable in private or restricted browser contexts */
-  }
-}
-
-function useBillingSummary(): BillingSummary {
-  const authState = useLandingAuthState();
-  const [summary, setSummary] = useState<CachedBillingSummary>(
-    () => readCachedBillingSummary() ?? EMPTY_BILLING_SUMMARY,
-  );
-
-  useEffect(() => {
-    if (authState !== "signed-in") {
-      writeCachedBillingSummary(null);
-      setSummary(EMPTY_BILLING_SUMMARY);
-      return;
-    }
-    let active = true;
-    fetch("/api/stripe/status", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: {
-        paid?: boolean;
-        billingMode?: string | null;
-        personal?: PlanBillingStatus;
-        companyOwner?: CompanyOwnerBillingStatus | null;
-      } | null) => {
-        if (active && data) {
-          const nextSummary: CachedBillingSummary = {
-            access: Boolean(data.paid),
-            billingMode: data.billingMode ?? null,
-            personal: data.personal,
-            companyOwner: data.companyOwner ?? null,
-          };
-          writeCachedBillingSummary(nextSummary);
-          setSummary(nextSummary);
-        }
-      })
-      .catch(() => {
-        /* treat as no access; the gate re-checks server-side anyway */
-      });
-    return () => {
-      active = false;
-    };
-  }, [authState]);
-
-  return { authState, ...summary };
-}
-
 /**
- * CTA for a purchasable plan. Resolves to one of:
+ * CTA for a plan card. Every signed-in user has full unconditional access -
+ * there's no purchase flow left - so this is just a router:
  *
- *   lifetime owner             → "Owned" → /file (all cycles)
- *   subscriber, lifetime tab   → "Own it for $199" (upgrade-to-own)
- *   subscriber, monthly/yearly → "Current plan" → /file
- *   signed-in, unpaid          → "Get Started" → checkout(plan, cadence)
- *   signed-out                 → Google sign-in → /onboarding
+ *   signed-in   → straight into the app
+ *   signed-out  → Google sign-in, then the onboarding funnel
  */
-function planCycleFromStatus(status: PlanBillingStatus | undefined): BillingCycle | null {
-  if (!status?.paid) return null;
-  if (status.billingMode === "lifetime") return "lifetime";
-  if (status.billingMode === "subscription") {
-    return status.interval === "year" ? "yearly" : "monthly";
-  }
-  return null;
-}
+function PlanCta({ plan }: { plan: PlanTier }) {
+  const authState = useLandingAuthState();
+  const tone: "blue" | "amber" = plan === "personal" ? "blue" : "amber";
 
-function PlanCta({
-  plan,
-  cycle,
-  billing,
-}: {
-  plan: CheckoutPlan;
-  cycle: BillingCycle;
-  billing?: BillingSummary;
-}) {
-  const fallbackBilling = useBillingSummary();
-  const summary = billing ?? fallbackBilling;
-  const { authState } = summary;
-  const { startCheckout, submitting } = useStripeCheckout();
-  const { openPortal, opening } = useBillingPortal();
-
-  const isPersonal = plan === "personal";
-  const tone: "blue" | "amber" = isPersonal ? "blue" : "amber";
-  const ownedStatus = isPersonal ? summary.personal : summary.companyOwner ?? undefined;
-  const ownedCycle = planCycleFromStatus(ownedStatus);
-
-  if (ownedCycle === "lifetime") {
-    const manage = cycle === "lifetime";
-    if (!manage) {
-      return (
-        <Link href="/file" className={ctaClass("solid", tone)}>
-          You own lifetime
-        </Link>
-      );
-    }
-    return (
-      <button
-        type="button"
-        onClick={() =>
-          void openPortal(
-            isPersonal
-              ? { scope: "personal" }
-              : { scope: "company", creedId: summary.companyOwner!.creedId },
-          )
-        }
-        disabled={opening}
-        className={ctaClass("solid", tone)}
-      >
-        {opening ? "Opening" : "Manage"}
-      </button>
-    );
-  }
-
-  if (ownedCycle === "monthly" || ownedCycle === "yearly") {
-    if (cycle === "lifetime") {
-      return (
-        <button
-          type="button"
-          onClick={() => void startCheckout({ plan, cadence: "lifetime" })}
-          disabled={submitting}
-          className={ctaClass("solid")}
-        >
-          {submitting ? "Starting" : isPersonal ? "Own it for $199" : "Own it for $1,999"}
-        </button>
-      );
-    }
-    const label =
-      cycle === ownedCycle
-        ? "Manage billing"
-        : cycle === "yearly"
-          ? "Switch to yearly"
-          : "Switch to monthly";
-    return (
-      <button
-        type="button"
-        onClick={() =>
-          void openPortal(
-            isPersonal
-              ? { scope: "personal" }
-              : { scope: "company", creedId: summary.companyOwner!.creedId },
-          )
-        }
-        disabled={opening}
-        className={ctaClass(cycle === ownedCycle ? "outline" : "solid", tone)}
-      >
-        {opening ? "Opening" : label}
-      </button>
-    );
-  }
-
-  // Signed out: hand off to Google sign-in, then the onboarding funnel (which
-  // can't carry the chosen cycle through OAuth, so it always starts on the
-  // monthly try-it path; yearly and lifetime are picked later once signed in).
   if (authState === "signed-out") {
     return (
       <GoogleSignInButton
@@ -719,17 +453,10 @@ function PlanCta({
     );
   }
 
-  // Signed in but unpaid (or auth still resolving - show the same button so the
-  // layout doesn't jump). Start checkout for this card's plan + mode directly.
   return (
-    <button
-      type="button"
-      onClick={() => void startCheckout({ plan, cadence: cycle })}
-      disabled={submitting}
-      className={ctaClass("solid", tone)}
-    >
-      {submitting ? "Starting" : "Get Started"}
-    </button>
+    <Link href="/file" className={ctaClass("solid", tone)}>
+      Go to app
+    </Link>
   );
 }
 

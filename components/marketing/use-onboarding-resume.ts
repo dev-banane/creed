@@ -6,8 +6,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 // True when the signed-in user has already started onboarding (a Creed exists
 // server-side: seed claimed or composed), so marketing CTAs can offer "Resume"
 // instead of "Get Started". Server-backed via /api/app/onboarding-status, so
-// it's correct on any device. Mirrors useLandingAuthState / usePaidStatus: a
-// tiny inline auth listener + fetch.
+// it's correct on any device. Mirrors useLandingAuthState: a tiny inline
+// auth listener + fetch.
 
 // Last resolved value, kept at module scope so the CTA label seeds from it on
 // every client-side navigation instead of flipping "Resume" -> "Get Started"

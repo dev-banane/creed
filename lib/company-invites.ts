@@ -4,10 +4,9 @@ import type { User } from "@supabase/supabase-js";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseLikeClient } from "@/lib/supabase/types";
 import { hashSecret } from "@/lib/secret-crypto";
-import { getCompanyBilling } from "@/lib/company-billing";
-import { deriveCompanyAccessState } from "@/lib/creed-permissions";
 import { getCreedRole } from "@/lib/creed-membership";
 import { getUserName, getAvatarUrl, getAvatarInitials } from "@/lib/creed-backend";
+import { MAX_SEATS } from "@/lib/seat-config";
 
 export type InviterProfile = { name: string; avatarUrl?: string; initials: string };
 
@@ -86,23 +85,17 @@ async function emailBelongsToMember(creedId: string, normalizedEmail: string): P
 export async function getSeatUsage(creedId: string): Promise<SeatUsage> {
   const db = admin();
   await sweepExpiredInvites(creedId);
-  const [{ count: memberCount }, { count: inviteCount }, billing] = await Promise.all([
+  const [{ count: memberCount }, { count: inviteCount }] = await Promise.all([
     db.from("creed_members").select("user_id", { count: "exact", head: true }).eq("creed_id", creedId) as unknown as Promise<{ count: number | null }>,
     db.from("creed_invites").select("id", { count: "exact", head: true }).eq("creed_id", creedId).eq("status", "pending") as unknown as Promise<{ count: number | null }>,
-    getCompanyBilling(creedId),
   ]);
-  // Fail closed: no billing row means no purchased capacity, so no invites can
-  // be sent. (By the time invites are reachable the checkout webhook has
-  // created the row; a missing row is an anomaly, not a free 10 seats.)
-  const capacity = billing ? billing.seats_included + billing.extra_seats : 0;
+  const capacity = MAX_SEATS;
   const used = (memberCount ?? 0) + (inviteCount ?? 0);
   return { used, capacity, available: Math.max(0, capacity - used) };
 }
 
-async function isCompanyFrozen(creedId: string): Promise<boolean> {
-  const billing = await getCompanyBilling(creedId);
-  if (!billing) return false;
-  return deriveCompanyAccessState(billing.status) === "frozen";
+async function isCompanyFrozen(_creedId: string): Promise<boolean> {
+  return false;
 }
 
 /**

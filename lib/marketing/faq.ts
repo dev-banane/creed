@@ -38,7 +38,7 @@ export const homeFaqItems: FaqItem[] = [
   {
     question: "Is Creedom for teams or just for me?",
     answer:
-      "Both. Creedom starts as a personal profile, and the Company plan adds one shared Company Creedom that every member's agents read, with member roles, an activity view across the team, and admin controls. It starts at $129 per month for 10 seats.",
+      "Both. Creedom starts as a personal profile, and the Company plan adds one shared Company Creedom that every member's agents read, with member roles, an activity view across the team, and admin controls. It's free and self-hosted, with unlimited seats.",
   },
 ];
 
@@ -48,32 +48,27 @@ export const pricingFaqItems: FaqItem[] = [
   {
     question: "Is Creedom free?",
     answer:
-      "Yes. Creedom is open source and free to self-host, with the full editor, every MCP connection, and quality scoring. Hosted plans add cross-device sync, backups, and managed auth and storage, and start at $12 per month.",
+      "Yes. Creedom is open source and free to self-host, with the full editor, every MCP connection, quality scoring, cross-device sync, backups, and the Company plan with unlimited seats.",
   },
   {
     question: "What are usage credits?",
     answer:
-      "Hosted plans include a monthly allowance of AI usage for quality analysis and agent work: $5 per month on Personal and $50 per month on Company. Lifetime plans include a one-time credit instead. When the allowance runs out you can top up, or bring your own key so model spend runs on your own account.",
+      "AI usage for quality analysis and agent work draws on a shared allowance you configure on your own deployment, or you can bring your own OpenRouter key so model spend runs entirely on your own account.",
   },
   {
     question: "What is BYOK?",
     answer:
-      "BYOK means bring your own key. You connect your own OpenRouter key so AI spend runs on your account and Creedom never owns your model bill. Every hosted plan supports it.",
+      "BYOK means bring your own key. You connect your own OpenRouter key so AI spend runs on your account and Creedom never owns your model bill.",
   },
   {
     question: "How much does the Company plan cost?",
     answer:
-      "The Company plan is $129 per month, $999 per year, or $1,999 one-time for lifetime. Each includes 10 seats. Extra seats are $12 per month, $99 per year, or $199 one-time depending on the cycle.",
-  },
-  {
-    question: "Can I switch between monthly, yearly, and lifetime?",
-    answer:
-      "Yes. You can move between billing cycles from your billing portal, and a subscriber can pay the difference to own Creedom for life. Only the account owner manages billing.",
+      "Nothing. The Company plan is free and self-hosted, with unlimited seats.",
   },
   {
     question: "Do I own my data, and can I cancel?",
     answer:
-      "Your Creedom is plain Markdown you own and can export at any time. You can cancel a subscription whenever you want, and deleting your account wipes everything. There is no lock-in.",
+      "Your Creedom is plain Markdown you own and can export at any time. Since you're self-hosting it, there's nothing to cancel and no lock-in.",
   },
 ];
 
@@ -93,17 +88,17 @@ export const companyFaqItems: FaqItem[] = [
   {
     question: "What roles does the Company plan have?",
     answer:
-      "Three: Owner, who manages billing, members, and content; Admin, who manages members and content; and Member, who reads and proposes. Section permissions can further control who edits each section directly versus by proposal, and every change is attributed in the activity view.",
+      "Three: Owner, who manages members and content; Admin, who manages members and content; and Member, who reads and proposes. Section permissions can further control who edits each section directly versus by proposal, and every change is attributed in the activity view.",
   },
   {
     question: "Do team members need their own personal Creedom?",
     answer:
-      "No. A member needs a Creedom account to join a seat, but not a personal Creedom. They connect their own agents over MCP and read the shared Company Creedom. They can keep a personal Creedom too, and switch between them from the workspace dropdown.",
+      "No. A member needs a Creedom account to join, but not a personal Creedom. They connect their own agents over MCP and read the shared Company Creedom. They can keep a personal Creedom too, and switch between them from the workspace dropdown.",
   },
   {
     question: "How much does the Company plan cost?",
     answer:
-      "It is $129 per month, $999 per year, or $1,999 one-time for lifetime. Each includes 10 seats. Extra seats are $12 per month, $99 per year, or $199 one-time depending on the cycle. Every Company plan supports BYOK, and billing is owner-only.",
+      "Nothing. The Company plan is free and self-hosted, with unlimited seats and BYOK support.",
   },
 ];
 

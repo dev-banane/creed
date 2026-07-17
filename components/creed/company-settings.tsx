@@ -39,10 +39,6 @@ import {
   ReauthorizeButton,
 } from "@/components/creed/settings-screen";
 import { CreditsHistoryDialog } from "@/components/creed/credits-history-dialog";
-import { AddCreditsDialog } from "@/components/creed/add-credits-dialog";
-import { BuySeatsDialog } from "@/components/creed/buy-seats-dialog";
-import { RemoveSeatsDialog } from "@/components/creed/remove-seats-dialog";
-import { seatCadence } from "@/lib/seat-config";
 import { SearchableSelect } from "@/components/creed/searchable-select";
 import { RichTextEditor } from "@/components/creed/rich-text-editor";
 import {
@@ -333,9 +329,6 @@ export function CompanySettings() {
   const [openRouterBalance, setOpenRouterBalance] =
     useState<OpenRouterBalance | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [addCreditsOpen, setAddCreditsOpen] = useState(false);
-  const [buySeatsOpen, setBuySeatsOpen] = useState(false);
-  const [removeSeatsOpen, setRemoveSeatsOpen] = useState(false);
 
   // Owner dialogs.
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -872,31 +865,6 @@ export function CompanySettings() {
     });
   }
 
-  async function openPortal() {
-    const res = await fetch("/api/app/company/portal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creedId }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      url?: string;
-      error?: string;
-    };
-    if (data.url) window.location.href = data.url;
-    else toast.error(data.error ?? "Could not open billing.");
-  }
-
-  async function refreshCredits() {
-    const res = await fetch(
-      `/api/app/credits?creedId=${encodeURIComponent(creedId)}`,
-      { cache: "no-store" },
-    );
-    const data = (await res.json().catch(() => ({}))) as {
-      credits?: CreditsState;
-    };
-    if (data.credits) setCredits(data.credits);
-  }
-
   async function putAiSettings(
     body: Record<string, unknown>,
   ): Promise<PublicAiSettings | null> {
@@ -1205,34 +1173,6 @@ export function CompanySettings() {
                   : ` ${seats.capacity - seats.used} open.`}
               </p>
             </div>
-            {isOwner ? (
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  variant="ghost"
-                  className={GHOST_BUTTON}
-                  onClick={openPortal}
-                >
-                  Manage
-                </Button>
-                {/* Removing seats is subscription-only; lifetime seats are
-                    purchased capacity and never refunded. */}
-                {company.billing?.billingMode === "subscription" && seats.extra > 0 ? (
-                  <Button
-                    variant="ghost"
-                    className={GHOST_BUTTON}
-                    onClick={() => setRemoveSeatsOpen(true)}
-                  >
-                    Remove
-                  </Button>
-                ) : null}
-                <Button
-                  className="rounded-md bg-[var(--creed-accent)] px-4 text-white hover:bg-[var(--creed-accent-hover)] hover:text-white"
-                  onClick={() => setBuySeatsOpen(true)}
-                >
-                  Buy
-                </Button>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -1604,13 +1544,6 @@ export function CompanySettings() {
                       Running low
                     </span>
                   ) : null}
-                  <Button
-                    className="rounded-md bg-[var(--creed-text-primary)] px-4 text-[var(--creed-button-primary-fg)] hover:bg-[var(--creed-button-primary-hover)]"
-                    onClick={() => setAddCreditsOpen(true)}
-                    disabled={!isOwner}
-                  >
-                    Add credits
-                  </Button>
                 </div>
               </div>
             ) : isOwner ? (
@@ -2019,32 +1952,6 @@ export function CompanySettings() {
           Settings
         </h1>
 
-        {company.accessState === "frozen" ? (
-          <div className="mt-6 rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] p-4 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-            This company Creed is read-only until billing is fixed.{" "}
-            {isOwner ? (
-              <button
-                onClick={openPortal}
-                className="font-medium text-[var(--creed-text-primary)] underline underline-offset-2"
-              >
-                Fix billing
-              </button>
-            ) : (
-              "Ask your owner to fix billing."
-            )}
-          </div>
-        ) : company.accessState === "past_due" && isOwner ? (
-          <div className="mt-6 rounded-[var(--radius-xl)] border border-[var(--creed-border)] bg-[var(--creed-surface-raised)] p-4 text-[13px] leading-6 text-[var(--creed-text-secondary)]">
-            A payment did not go through.{" "}
-            <button
-              onClick={openPortal}
-              className="font-medium text-[var(--creed-text-primary)] underline underline-offset-2"
-            >
-              Fix billing
-            </button>
-          </div>
-        ) : null}
-
         {blocks.map((block, index) => (
           <div key={index} className={index === 0 ? "mt-10" : undefined}>
             {index > 0 ? (
@@ -2054,44 +1961,6 @@ export function CompanySettings() {
           </div>
         ))}
       </div>
-
-      <AddCreditsDialog
-        open={addCreditsOpen}
-        onOpenChange={setAddCreditsOpen}
-        currentBalanceUsd={balanceUsd}
-        onToppedUp={() => void refreshCredits()}
-      />
-
-      {company.billing ? (
-        <BuySeatsDialog
-          open={buySeatsOpen}
-          onOpenChange={setBuySeatsOpen}
-          creedId={creedId}
-          cadence={seatCadence(
-            company.billing.billingMode,
-            company.billing.interval,
-          )}
-          used={seats?.used ?? 0}
-          capacity={seats?.capacity ?? 0}
-          onPurchased={() => void refreshState()}
-        />
-      ) : null}
-
-      {company.billing && seats ? (
-        <RemoveSeatsDialog
-          open={removeSeatsOpen}
-          onOpenChange={setRemoveSeatsOpen}
-          creedId={creedId}
-          cadence={seatCadence(
-            company.billing.billingMode,
-            company.billing.interval,
-          )}
-          used={seats.used}
-          included={seats.included}
-          extra={seats.extra}
-          onDone={() => void refreshState()}
-        />
-      ) : null}
 
       <CreditsHistoryDialog
         open={historyOpen}

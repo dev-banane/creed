@@ -2650,6 +2650,17 @@ export function CreedProvider({
   }
 
   async function claimOnboardingPreview(sections: CreedSection[]) {
+    // One-time seed claim. If a Creed is already persisted (the user
+    // navigated back into onboarding after already claiming - or composing -
+    // and clicked through the intro steps again), this must be a no-op: the
+    // old `else` branch here called persistState(nextState), which PUT the
+    // blank seed over the full server state and wiped real content (agent-
+    // composed sections, or the user's own in-app edits) back to onboarding
+    // stubs. /api/app/claim carries the same guard server-side.
+    if (persistenceEnabled) {
+      return;
+    }
+
     const nextState = nextMutationTick({
       ...state,
       lastSavedAt: Date.now(),
@@ -2660,25 +2671,20 @@ export function CreedProvider({
 
     setState(nextState);
 
-    if (!persistenceEnabled) {
-      const response = await fetch("/api/app/claim", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sections }),
-      });
+    const response = await fetch("/api/app/claim", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sections }),
+    });
 
-      if (!response.ok) {
-        throw new Error("Could not create your Creed.");
-      }
-      // The seed is now persisted server-side, so this is a real backed
-      // session. Turn on persistence so subsequent edits save.
-      setPersistenceEnabled(true);
-      return;
+    if (!response.ok) {
+      throw new Error("Could not create your Creed.");
     }
-
-    await persistState(nextState);
+    // The seed is now persisted server-side, so this is a real backed
+    // session. Turn on persistence so subsequent edits save.
+    setPersistenceEnabled(true);
   }
 
   async function importSections(sections: CreedSection[]) {

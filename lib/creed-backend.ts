@@ -33,8 +33,8 @@ import {
 } from "@/lib/creed-data";
 import {
   resolveSectionPermission,
-  deriveCompanyAccessState,
   type CreedRole,
+  type CompanyAccessState,
 } from "@/lib/creed-permissions";
 import {
   getAgentIconKind,
@@ -1721,7 +1721,7 @@ export async function loadCompanyCreedState(
     .filter((entry) => !entry.sectionId || visibleIds.has(entry.sectionId))
     .filter((entry) => !isNoopActivityEntry(entry));
 
-  const accessState = deriveCompanyAccessState(billingRow?.status);
+  const accessState: CompanyAccessState = "active";
   const seatsCapacity =
     (billingRow?.seats_included ?? 10) + (billingRow?.extra_seats ?? 0);
   const company: CompanyContext = {
