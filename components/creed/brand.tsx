@@ -37,7 +37,7 @@ export function CreedWordmark({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={brandmark}
-        alt="Creed"
+        alt="Creedom"
         width={80}
         height={18}
         decoding="async"
@@ -55,7 +55,7 @@ export function CreedMark({ className }: { className?: string }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={logo}
-        alt="Creed"
+        alt="Creedom"
         width={18}
         height={18}
         decoding="async"
@@ -74,7 +74,7 @@ export function CreedAgentGlyph({ className }: { className?: string }) {
   return (
     <span
       role="img"
-      aria-label="Creed"
+      aria-label="Creedom"
       className={cn("block shrink-0", className)}
       style={{
         backgroundColor: "var(--creed-accent)",

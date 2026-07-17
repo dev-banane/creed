@@ -27,7 +27,7 @@ export const syncAiMemoryAcrossTools: Article = {
     },
     {
       type: "p",
-      text: "Creed is that file: plain Markdown you own, organized into short sections like identity, goals, work, preferences, and constraints. Tools connect over MCP, an open way for agents to read external context, and the Creed server uses OAuth, so there is nothing to copy. You add the server, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile.",
+      text: "Creedom is that file: plain Markdown you own, organized into short sections like identity, goals, work, preferences, and constraints. Tools connect over MCP, an open way for agents to read external context, and the Creedom server uses OAuth, so there is nothing to copy. You add the server, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile.",
     },
     { type: "h2", text: "How each tool connects" },
     {
@@ -38,7 +38,7 @@ export const syncAiMemoryAcrossTools: Article = {
         [
           "ChatGPT",
           "Settings > Connectors > add a custom or remote MCP server at https://creed.md/mcp",
-          "Click Allow on the Creed consent screen",
+          "Click Allow on the Creedom consent screen",
         ],
         [
           "Claude Code",
@@ -57,7 +57,7 @@ export const syncAiMemoryAcrossTools: Article = {
       type: "ol",
       items: [
         "Write your durable context into one file: who you are, current goals, how you work, your preferences, hard constraints.",
-        "Add the Creed MCP server to each tool using https://creed.md/mcp.",
+        "Add the Creedom MCP server to each tool using https://creed.md/mcp.",
         "Authorize each connection with OAuth: sign in to creed.md and click Allow.",
         "Verify by listing the MCP tools in each app and calling read_creed once.",
         "Let each agent read the file before meaningful work and propose small updates as your work shifts.",
@@ -75,7 +75,7 @@ export const syncAiMemoryAcrossTools: Article = {
     { type: "h2", text: "Keeping every tool current" },
     {
       type: "p",
-      text: "Once all three read the same file, staying in sync is automatic: you update the file once and every connected tool picks it up on its next read. With Creed, agents propose narrow updates as they learn something durable, and you approve what stays. The get_write_policy tool reports whether an edit applies directly or arrives as a proposal, so you keep control.",
+      text: "Once all three read the same file, staying in sync is automatic: you update the file once and every connected tool picks it up on its next read. With Creedom, agents propose narrow updates as they learn something durable, and you approve what stays. The get_write_policy tool reports whether an edit applies directly or arrives as a proposal, so you keep control.",
     },
     {
       type: "p",
@@ -91,7 +91,7 @@ export const syncAiMemoryAcrossTools: Article = {
     {
       question: "Do I need API keys to connect the tools?",
       answer:
-        "No. The Creed MCP connection uses OAuth. You add the server at https://creed.md/mcp in each tool, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile.",
+        "No. The Creedom MCP connection uses OAuth. You add the server at https://creed.md/mcp in each tool, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile.",
     },
     {
       question: "What happens when I update my context?",
@@ -110,7 +110,7 @@ export const syncAiMemoryAcrossTools: Article = {
       href: "/learn/share-context-between-chatgpt-and-claude",
     },
     {
-      label: "Connect Creed to Cursor",
+      label: "Connect Creedom to Cursor",
       href: "/learn/connect-creed-to-cursor",
     },
     {

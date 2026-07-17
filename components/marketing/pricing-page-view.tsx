@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 type Feature = { label: string; included: boolean; star?: boolean };
 
 const SHARED_FEATURES: Feature[] = [
-  { label: "Full Creed editor with rich components", included: true },
+  { label: "Full Creedom editor with rich components", included: true },
   { label: "All MCP connections and integrations", included: true },
   { label: "Quality scoring and inline diff review", included: true },
 ];
@@ -65,7 +65,7 @@ function companyFeatures(cycle: BillingCycle): Feature[] {
       : { label: "$50/month of usage included", included: true, star: true };
   return [
     { label: "Everything in Personal", included: true },
-    { label: "Shared Company Creed", included: true, star: true },
+    { label: "Shared Company Creedom", included: true, star: true },
     { label: "See activity across every member", included: true, star: true },
     usage,
     { label: "Admin controls for members", included: true, star: true },
@@ -108,7 +108,7 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
           <div>
             <AnimatedPageTitle text="Pricing" />
             <p className="t-lede mt-5 max-w-2xl text-[var(--creed-text-secondary)]">
-              Run Creed yourself for free, or skip the setup and let us host it.
+              Run Creedom yourself for free, or skip the setup and let us host it.
             </p>
           </div>
 
@@ -124,7 +124,7 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
             <PricingCard
               name="Open"
               nameClassName="text-[var(--creed-border-strong)]"
-              price="$0"
+              price="Free"
               cadence="forever"
               tagline="Self-host the open source build for free."
               features={[...SHARED_FEATURES, ...FREE_EXTRAS]}
@@ -140,6 +140,8 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
               nameClassName="text-[var(--creed-accent)]"
               price={personal.price}
               cadence={personal.cadence}
+              listPrice={personal.listPrice}
+              listCadence={personal.listCadence}
               tagline={personal.tagline}
               features={personalFeatures(cycle)}
               cta={{ kind: "plan", plan: "personal", cycle }}
@@ -152,6 +154,8 @@ export function PricingPageView({ reference }: { reference?: ReactNode }) {
               nameClassName="text-[#F59E0B] dark:text-[#F5A623]"
               price={company.price}
               cadence={company.cadence}
+              listPrice={company.listPrice}
+              listCadence={company.listCadence}
               tagline={company.tagline}
               features={companyFeatures(cycle)}
               cta={{ kind: "plan", plan: "company", cycle }}
@@ -236,6 +240,8 @@ function PricingCard({
   nameClassName,
   price,
   cadence,
+  listPrice,
+  listCadence,
   tagline,
   features,
   cta,
@@ -247,6 +253,8 @@ function PricingCard({
   nameClassName: string;
   price: string;
   cadence: string;
+  listPrice?: string;
+  listCadence?: string;
   tagline: string;
   features: Feature[];
   cta: PricingCardCta;
@@ -267,7 +275,12 @@ function PricingCard({
           {name}
         </div>
         <div className="mt-5">
-          <PriceRow price={price} cadence={cadence} />
+          <PriceRow
+            price={price}
+            cadence={cadence}
+            listPrice={listPrice}
+            listCadence={listCadence}
+          />
         </div>
         <p className="mt-3 text-[14px] leading-6 text-[var(--creed-text-secondary)]">
           {tagline}
@@ -381,16 +394,36 @@ function RollingValue({
 }
 
 // Price cluster: the price and the cadence, each rolling with a slot-machine
-// blur (via RollingValue) when the billing cycle flips.
-function PriceRow({ price, cadence }: { price: string; cadence: string }) {
+// blur (via RollingValue) when the billing cycle flips. When a list price is
+// present (this is a free self-hosted fork of a paid product), it renders
+// struck through just above the real price, so the discount reads instantly.
+function PriceRow({
+  price,
+  cadence,
+  listPrice,
+  listCadence,
+}: {
+  price: string;
+  cadence: string;
+  listPrice?: string;
+  listCadence?: string;
+}) {
   return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[var(--creed-text-primary)]">
-        <RollingValue value={price} />
-      </span>
-      <span className="text-[13px] font-medium text-[var(--creed-text-tertiary)]">
-        <RollingValue value={cadence} />
-      </span>
+    <div>
+      {listPrice ? (
+        <div className="flex items-baseline gap-1.5 text-[15px] font-medium leading-none text-[var(--creed-text-tertiary)] line-through decoration-2">
+          <RollingValue value={listPrice} />
+          {listCadence ? <RollingValue value={listCadence} /> : null}
+        </div>
+      ) : null}
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-[36px] font-semibold leading-none tracking-[-0.02em] text-[var(--creed-text-primary)]">
+          <RollingValue value={price} />
+        </span>
+        <span className="text-[13px] font-medium text-[var(--creed-text-tertiary)]">
+          <RollingValue value={cadence} />
+        </span>
+      </div>
     </div>
   );
 }

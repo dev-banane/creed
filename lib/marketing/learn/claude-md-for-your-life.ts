@@ -92,7 +92,7 @@ export const claudeMdForYourLife: Article = {
     },
     {
       type: "p",
-      text: "Creed is that portable file. It is one personal context file that every AI you connect reads before it answers, connected over MCP to Claude Code, ChatGPT, Cursor, and others, so you write yourself down once and every tool sees the same page. It is plain Markdown you own, exportable and deletable at any time, and it integrates with GitHub if you want version control, the same versioning instinct that made CLAUDE.md feel natural in the first place.",
+      text: "Creedom is that portable file. It is one personal context file that every AI you connect reads before it answers, connected over MCP to Claude Code, ChatGPT, Cursor, and others, so you write yourself down once and every tool sees the same page. It is plain Markdown you own, exportable and deletable at any time, and it integrates with GitHub if you want version control, the same versioning instinct that made CLAUDE.md feel natural in the first place.",
     },
   ],
   faq: [
@@ -112,14 +112,14 @@ export const claudeMdForYourLife: Article = {
         "Your identity is not scoped to one repository or one tool. A CLAUDE.md lives in a single repo and is a Claude Code convention, so you end up copying it into every project and every app, and the copies drift apart. A portable context file every agent reads solves that.",
     },
     {
-      question: "How is Creed different from a personal CLAUDE.md?",
+      question: "How is Creedom different from a personal CLAUDE.md?",
       answer:
-        "Creed is one context file that every AI you connect reads over MCP, not just Claude Code in one repo. It is portable across tools and agents propose narrow updates you approve, so it stays current instead of drifting across copies.",
+        "Creedom is one context file that every AI you connect reads over MCP, not just Claude Code in one repo. It is portable across tools and agents propose narrow updates you approve, so it stays current instead of drifting across copies.",
     },
   ],
   related: [
     { label: "A personal CLAUDE.md template", href: "/learn/personal-claude-md-template" },
     { label: "What is a personal context file?", href: "/learn/what-is-a-personal-context-file" },
-    { label: "Connect Creed to Claude Code", href: "/learn/connect-creed-to-claude-code" },
+    { label: "Connect Creedom to Claude Code", href: "/learn/connect-creed-to-claude-code" },
   ],
 };

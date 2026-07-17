@@ -9,7 +9,7 @@ export const shareContextBetweenChatgptAndClaude: Article = {
   datePublished: "2026-07-07",
   dateModified: "2026-07-07",
   lead:
-    "ChatGPT and Claude do not share memory. Each keeps its own private store, and neither can read the other's. So the context you built up in ChatGPT means nothing to Claude, and you end up maintaining two half-versions of yourself, one in each app.\n\nYou can copy and paste a profile into both, and that works for a day. But the two copies drift apart the moment your work changes, and you are back to manual upkeep in two places. The manual approach does not scale past a tool or two.\n\nThe durable fix is to keep your context in one file that both tools read, rather than inside either app. Put the file in one place you own, connect it to ChatGPT and to Claude, and each reads the same profile before it answers. Creed is one personal context file that every AI reads before it answers; both ChatGPT and Claude connect to it over MCP, so a single profile stays consistent across both instead of living in two disconnected memories.",
+    "ChatGPT and Claude do not share memory. Each keeps its own private store, and neither can read the other's. So the context you built up in ChatGPT means nothing to Claude, and you end up maintaining two half-versions of yourself, one in each app.\n\nYou can copy and paste a profile into both, and that works for a day. But the two copies drift apart the moment your work changes, and you are back to manual upkeep in two places. The manual approach does not scale past a tool or two.\n\nThe durable fix is to keep your context in one file that both tools read, rather than inside either app. Put the file in one place you own, connect it to ChatGPT and to Claude, and each reads the same profile before it answers. Creedom is one personal context file that every AI reads before it answers; both ChatGPT and Claude connect to it over MCP, so a single profile stays consistent across both instead of living in two disconnected memories.",
   body: [
     { type: "h2", text: "Why the two apps can't see each other" },
     {
@@ -27,12 +27,12 @@ export const shareContextBetweenChatgptAndClaude: Article = {
     },
     {
       type: "p",
-      text: "Creed is that file. It is plain Markdown organized into short sections: identity, goals, work, preferences, routines, and optional ones like constraints. The Creed MCP server uses OAuth, so there is nothing to copy: you add the server, click Allow on the Creed consent screen while signed in, and the tool can read your profile.",
+      text: "Creedom is that file. It is plain Markdown organized into short sections: identity, goals, work, preferences, routines, and optional ones like constraints. The Creedom MCP server uses OAuth, so there is nothing to copy: you add the server, click Allow on the Creedom consent screen while signed in, and the tool can read your profile.",
     },
     { type: "h2", text: "Connect Claude Code" },
     {
       type: "p",
-      text: "Add Creed as a remote MCP server, then authorize it from inside Claude Code.",
+      text: "Add Creedom as a remote MCP server, then authorize it from inside Claude Code.",
     },
     {
       type: "code",
@@ -42,9 +42,9 @@ export const shareContextBetweenChatgptAndClaude: Article = {
     {
       type: "ol",
       items: [
-        "Run the command above to register the Creed server.",
+        "Run the command above to register the Creedom server.",
         "In Claude Code, run /mcp to start authorization.",
-        "Your browser opens the Creed consent screen; while signed in to creed.md, click Allow.",
+        "Your browser opens the Creedom consent screen; while signed in to creed.md, click Allow.",
         "Verify by listing the MCP tools and calling read_creed once.",
       ],
     },
@@ -54,8 +54,8 @@ export const shareContextBetweenChatgptAndClaude: Article = {
       items: [
         "In ChatGPT, open Settings and go to Connectors.",
         "Add a custom or remote MCP server pointing to https://creed.md/mcp.",
-        "When prompted, authorize it: sign in to creed.md and click Allow on the Creed consent screen.",
-        "Confirm ChatGPT can see the Creed tools, then let it read your profile before meaningful work.",
+        "When prompted, authorize it: sign in to creed.md and click Allow on the Creedom consent screen.",
+        "Confirm ChatGPT can see the Creedom tools, then let it read your profile before meaningful work.",
       ],
     },
     {
@@ -76,7 +76,7 @@ export const shareContextBetweenChatgptAndClaude: Article = {
     { type: "h2", text: "Keeping the shared file current" },
     {
       type: "p",
-      text: "A shared file is only as good as its freshness. With Creed, connected agents read the profile before meaningful work and propose narrow updates as they learn something durable about you, which you approve. The get_write_policy tool reports whether a given edit applies directly or arrives as a proposal, so you stay in control of what changes.",
+      text: "A shared file is only as good as its freshness. With Creedom, connected agents read the profile before meaningful work and propose narrow updates as they learn something durable about you, which you approve. The get_write_policy tool reports whether a given edit applies directly or arrives as a proposal, so you stay in control of what changes.",
     },
     {
       type: "p",
@@ -92,12 +92,12 @@ export const shareContextBetweenChatgptAndClaude: Article = {
     {
       question: "How do I share context between ChatGPT and Claude?",
       answer:
-        "Keep your context in one file and connect it to both tools over MCP. Add the Creed server at https://creed.md/mcp in each app, authorize with OAuth, and both read the same profile before they answer.",
+        "Keep your context in one file and connect it to both tools over MCP. Add the Creedom server at https://creed.md/mcp in each app, authorize with OAuth, and both read the same profile before they answer.",
     },
     {
       question: "Is there anything to copy or paste with MCP?",
       answer:
-        "No. The Creed MCP connection uses OAuth, so you add the server, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile. There are no keys to copy.",
+        "No. The Creedom MCP connection uses OAuth, so you add the server, click Allow on the consent screen while signed in to creed.md, and the tool can read your profile. There are no keys to copy.",
     },
     {
       question: "Will the shared context stay up to date?",
@@ -111,11 +111,11 @@ export const shareContextBetweenChatgptAndClaude: Article = {
       href: "/learn/sync-ai-memory-across-tools",
     },
     {
-      label: "Connect Creed to ChatGPT",
+      label: "Connect Creedom to ChatGPT",
       href: "/learn/connect-creed-to-chatgpt",
     },
     {
-      label: "Connect Creed to Claude Code",
+      label: "Connect Creedom to Claude Code",
       href: "/learn/connect-creed-to-claude-code",
     },
   ],

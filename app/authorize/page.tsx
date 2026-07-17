@@ -64,7 +64,7 @@ export default async function AuthorizePage({
       <Shell>
         <Message
           title="Connection unavailable"
-          body="Creed is not fully configured on this deployment. Try again later."
+          body="Creedom is not fully configured on this deployment. Try again later."
         />
       </Shell>
     );
@@ -127,7 +127,7 @@ export default async function AuthorizePage({
       <Shell>
         <Message
           title="Sign in to connect"
-          body={`Sign in to your Creed account to let ${client.clientName} read and update your Creed.`}
+          body={`Sign in to your Creedom account to let ${client.clientName} read and update your Creedom.`}
         />
         <div className="mt-6 flex justify-center">
           <Link
@@ -159,10 +159,10 @@ export default async function AuthorizePage({
         </div>
 
         <h1 className="mt-6 text-[18px] font-medium text-[var(--creed-text-primary)]">
-          Set up Creed to connect {client.clientName}
+          Set up Creedom to connect {client.clientName}
         </h1>
         <p className="mt-3 text-[14px] leading-7 text-[var(--creed-text-secondary)]">
-          Connecting an agent is part of Creed. Finish setting up your Creed, then
+          Connecting an agent is part of Creedom. Finish setting up your Creedom, then
           start the connection from {client.clientName} again.
         </p>
         <p className="mt-2 text-[13px] text-[var(--creed-text-tertiary)]">
@@ -172,7 +172,7 @@ export default async function AuthorizePage({
         <div className="mt-7 flex justify-center">
           <Link href="/">
             <Button className="h-9 rounded-md bg-[var(--creed-accent)] px-6 text-white hover:bg-[var(--creed-accent-hover)]">
-              Go to Creed
+              Go to Creedom
             </Button>
           </Link>
         </div>
@@ -210,10 +210,10 @@ export default async function AuthorizePage({
       </div>
 
       <h1 className="mt-6 text-[18px] font-medium text-[var(--creed-text-primary)]">
-        Connect {client.clientName} to your Creed
+        Connect {client.clientName} to your Creedom
       </h1>
       <p className="mt-3 text-[14px] leading-7 text-[var(--creed-text-secondary)]">
-        {client.clientName} can read your Creed and propose updates, and edits a
+        {client.clientName} can read your Creedom and propose updates, and edits a
         section directly only where you allow direct edits.
       </p>
       <p className="mt-2 text-[13px] text-[var(--creed-text-tertiary)]">

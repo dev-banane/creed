@@ -2,7 +2,7 @@
 //
 // These power rich results in classic search and, more importantly, give
 // answer engines (AI Overviews, Perplexity, ChatGPT) a machine-readable
-// description of what Creed is, what it costs, and the questions it answers.
+// description of what Creedom is, what it costs, and the questions it answers.
 // Everything is first-party constant data resolved against the deploy origin,
 // so it stays accurate without per-request work.
 //
@@ -13,7 +13,7 @@ import type { FaqItem } from "@/lib/marketing/faq";
 import { CREED_DESCRIPTION, CREED_TAGLINE } from "@/lib/marketing/brand";
 import { getSiteUrl } from "@/lib/supabase/env";
 
-const SITE_NAME = "Creed";
+const SITE_NAME = "Creedom";
 
 function base() {
   return getSiteUrl().replace(/\/$/, "");
@@ -28,7 +28,7 @@ function websiteId() {
 }
 
 // The brand entity. `sameAs` ties the site to its off-site profiles, which is
-// one of the signals engines use to resolve "Creed" to a real organization
+// one of the signals engines use to resolve "Creedom" to a real organization
 // rather than a common noun.
 export function organizationSchema() {
   const url = base();
@@ -58,15 +58,12 @@ export function websiteSchema() {
   };
 }
 
-// The product itself. Offers mirror the live pricing (free self-host, Personal
-// $12/mo, $99/yr, $199 lifetime, and the live Company plan $129/mo, $999/yr,
-// $1,999 lifetime) so a price quoted in an AI answer matches the pricing page.
 export function softwareApplicationSchema() {
   const url = base();
-  const offer = (name: string, price: string) => ({
+  const offer = (name: string) => ({
     "@type": "Offer",
     name,
-    price,
+    price: "0",
     priceCurrency: "USD",
     url: `${url}/pricing`,
   });
@@ -81,13 +78,13 @@ export function softwareApplicationSchema() {
     image: `${url}/opengraph-image.jpg`,
     publisher: { "@id": organizationId() },
     offers: [
-      { "@type": "Offer", name: "Free (self-host)", price: "0", priceCurrency: "USD" },
-      offer("Personal (monthly)", "12"),
-      offer("Personal (yearly)", "99"),
-      offer("Personal (lifetime)", "199"),
-      offer("Company (monthly)", "129"),
-      offer("Company (yearly)", "999"),
-      offer("Company (lifetime)", "1999"),
+      offer("Free (self-host)"),
+      offer("Personal (monthly)"),
+      offer("Personal (yearly)"),
+      offer("Personal (lifetime)"),
+      offer("Company (monthly)"),
+      offer("Company (yearly)"),
+      offer("Company (lifetime)"),
     ],
   };
 }
@@ -136,7 +133,7 @@ export function webPageSchema({
   };
 }
 
-// An Article node for a /learn guide. Authored and published by the Creed
+// An Article node for a /learn guide. Authored and published by the Creedom
 // organization; datePublished/dateModified drive the freshness signal that AI
 // engines weight, so keep dateModified in step with the article's registry.
 export function articleSchema({

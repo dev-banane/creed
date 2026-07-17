@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Checkout cancelled · Creed",
+  title: "Checkout cancelled · Creedom",
   description: "Your checkout was cancelled. No payment was taken.",
 };
 

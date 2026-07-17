@@ -23,13 +23,13 @@ const ROLES = [
   },
   {
     name: "Admin",
-    body: "Manages members and content. Keeps the shared Creed sharp.",
+    body: "Manages members and content. Keeps the shared Creedom sharp.",
     fill: "bg-[#ECFDF5] dark:bg-[#052e1a]/50",
     text: "text-[#047857] dark:text-[#4ade80]",
   },
   {
     name: "Member",
-    body: "Reads the shared Creed and proposes updates their work reveals.",
+    body: "Reads the shared Creedom and proposes updates their work reveals.",
     fill: "bg-[#FFFBEB] dark:bg-[#3a2a12]/50",
     text: "text-[#B45309] dark:text-[#FBBF24]",
   },
@@ -38,11 +38,11 @@ const ROLES = [
 const HOW = [
   {
     title: "One shared file",
-    body: "A Company Creed is the same structured profile as a personal one, owned by the team. It holds how you work, what you are building, and the conventions everyone should follow.",
+    body: "A Company Creedom is the same structured profile as a personal one, owned by the team. It holds how you work, what you are building, and the conventions everyone should follow.",
   },
   {
     title: "Every agent reads it",
-    body: "Members connect their own agents over MCP and read the shared Creed before they act, so answers match how the team actually operates instead of drifting.",
+    body: "Members connect their own agents over MCP and read the shared Creedom before they act, so answers match how the team actually operates instead of drifting.",
   },
   {
     title: "Proposals, not sludge",
@@ -66,7 +66,7 @@ export function CompanyPageView() {
             className="max-w-3xl"
           />
           <p className="t-lede mt-5 max-w-2xl text-[var(--creed-text-secondary)]">
-            The Company plan adds one shared Company Creed on top of your
+            The Company plan adds one shared Company Creedom on top of your
             personal one. Every member&apos;s agents read the same company
             context before they answer, so you stop re-explaining how the team
             works to every tool. Roles, section permissions, an activity view,
@@ -90,7 +90,7 @@ export function CompanyPageView() {
 
         <section className="py-12">
           <h2 className="text-[24px] font-medium tracking-[-0.01em] text-[var(--creed-text-primary)] md:text-[28px]">
-            How a Company Creed works
+            How a Company Creedom works
           </h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {HOW.map((item) => (

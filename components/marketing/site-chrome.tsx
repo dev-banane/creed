@@ -337,7 +337,7 @@ export function MarketingHeader({
       <div className="flex items-center md:hidden">
         <Link
           href="/home"
-          aria-label="Creed home"
+          aria-label="Creedom home"
           className="shrink-0 transition-opacity duration-200 hover:opacity-60"
           onClick={() => setMobileMenuOpen(false)}
         >
@@ -350,7 +350,7 @@ export function MarketingHeader({
 
       <Link
         href="/home"
-        aria-label="Creed home"
+        aria-label="Creedom home"
         className="hidden shrink-0 transition-opacity duration-200 hover:opacity-60 md:block"
       >
         <CreedWordmark className="ml-0" imageClassName={stickyChromeActive ? undefined : "invert brightness-0"} />
@@ -545,7 +545,7 @@ function GitHubStarButton({
       href={GITHUB_URL}
       target="_blank"
       rel="noreferrer"
-      aria-label="Star Creed on GitHub"
+      aria-label="Star Creedom on GitHub"
       onClick={onNavigate}
       className={cn(
         "inline-flex h-9 items-center gap-2.5 rounded-md px-3 text-[14px] font-medium shadow-none transition-colors duration-300",
@@ -998,7 +998,7 @@ export function MarketingFooter() {
           <div>
             <Link
               href="/home"
-              aria-label="Creed home"
+              aria-label="Creedom home"
               className="inline-block transition-opacity hover:opacity-80"
             >
               <CreedWordmark />
@@ -1021,7 +1021,7 @@ export function MarketingFooter() {
 
       <div className="mx-auto mt-8 flex max-w-7xl flex-col gap-4 border-t border-[var(--creed-border)] py-6 md:flex-row md:items-center md:justify-between">
         <div className="t-meta flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--creed-text-tertiary)]">
-          <span>© 2026 Creed</span>
+          <span>© 2026 Creedom</span>
           <span aria-hidden="true">·</span>
           <span>by</span>
           <Link

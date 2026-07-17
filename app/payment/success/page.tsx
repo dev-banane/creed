@@ -13,8 +13,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { log } from "@/lib/observability";
 
 export const metadata: Metadata = {
-  title: "Payment received · Creed",
-  description: "Your Creed is unlocked.",
+  title: "Payment received · Creedom",
+  description: "Your Creedom is unlocked.",
 };
 
 export const dynamic = "force-dynamic";
@@ -151,7 +151,7 @@ function SuccessOk({
           fit. */}
       <h1 className="t-section text-[var(--creed-text-primary)]">Payment received</h1>
       <p className="mt-4 max-w-sm text-[15px] leading-7 text-[var(--creed-text-secondary)]">
-        Creed is unlocked on your account. Let&apos;s set things up.
+        Creedom is unlocked on your account. Let&apos;s set things up.
       </p>
       <ContinueButton href={continueHref} autoAdvance={autoAdvance} />
       {/* Warm the welcome-tour videos here (a paid user headed straight to the
@@ -167,7 +167,7 @@ function NotSignedIn() {
     <>
       <h1 className="t-section text-[var(--creed-text-primary)]">Payment received</h1>
       <p className="mt-4 max-w-sm text-[15px] leading-7 text-[var(--creed-text-secondary)]">
-        Sign back in with the Google account you used to buy Creed to finish setting up.
+        Sign back in with the Google account you used to buy Creedom to finish setting up.
       </p>
       <div className="mt-8">
         <GoogleSignInButton label="Sign in to continue" redirectTo="/file" />
@@ -181,7 +181,7 @@ function WrongUser() {
     <>
       <h1 className="t-section text-[var(--creed-text-primary)]">Different account</h1>
       <p className="mt-4 max-w-sm text-[15px] leading-7 text-[var(--creed-text-secondary)]">
-        This payment was made on a different Creed account. Sign out and sign back in
+        This payment was made on a different Creedom account. Sign out and sign back in
         with the Google account you used at checkout.
       </p>
       <Link

@@ -759,7 +759,7 @@ export function CreedAppDemo() {
               <div className="sticky top-0 z-20 mb-7 bg-[color:var(--creed-surface)]/95 pb-4 pt-3 backdrop-blur-sm">
                 <div className="mx-auto flex max-w-[700px] flex-col gap-4 px-4 md:flex-row md:items-start md:justify-between md:px-7">
                   <div>
-                    <div className="whitespace-nowrap text-[18px] font-medium tracking-[-0.02em] text-[var(--creed-text-primary)] md:text-[20px]">Steve / Creed</div>
+                    <div className="whitespace-nowrap text-[18px] font-medium tracking-[-0.02em] text-[var(--creed-text-primary)] md:text-[20px]">Steve / Creedom</div>
                     <div className="mt-2 flex items-center gap-2 text-sm text-[var(--creed-text-secondary)]">
                       <ClockIcon size={14} className="h-3.5 w-3.5 shrink-0" />
                       {saving ? "Saving…" : "Saved just now"}
@@ -776,7 +776,7 @@ export function CreedAppDemo() {
                       <button
                         type="button"
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--creed-text-primary)] transition-colors duration-150 hover:bg-[var(--creed-surface-raised)] data-[state=open]:bg-[var(--creed-surface-raised)]"
-                        aria-label="Run Creed quality analysis"
+                        aria-label="Run Creedom quality analysis"
                       >
                         <QualityRing
                           score={quality.overall.score}

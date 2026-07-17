@@ -3,7 +3,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="public/assets/brand/brandmark-email-dark.png">
-    <img alt="Creed" src="public/assets/brand/brandmark-email.png" width="208">
+    <img alt="Creedom" src="public/assets/brand/brandmark-email.png" width="208">
   </picture>
 </h1>
 
@@ -11,6 +11,8 @@
 
 Write yourself down once. Every AI you use reads it before answering,
 and proposes updates as it learns you. You approve the good ones.
+
+> This is a personal self-hosted fork of [connorhpbrn/creed](https://github.com/connorhpbrn/creed), MIT licensed.
 
 [Home](https://creed.md) · [Docs](https://creed.md/docs) · [Pricing](https://creed.md/pricing) · [Stack](https://creed.md/stack) · [Privacy](https://creed.md/privacy)
 
@@ -20,13 +22,13 @@ and proposes updates as it learns you. You approve the good ones.
 
 </div>
 
-## What is Creed?
+## What is Creedom?
 
-Anyone using AI seriously pays the same tax: re-explaining themselves every chat, every tool, every session. Creed (creed.md) kills that tax with one file.
+Anyone using AI seriously pays the same tax: re-explaining themselves every chat, every tool, every session. Creedom (creed.md) kills that tax with one file.
 
-Your Creed is a curated personal context profile in plain Markdown, sized to read in under a minute. Connected agents (Claude, ChatGPT, Codex, Cursor, Devin, and any MCP client) read it before they answer you, and propose edits as they learn new things. The file sharpens over time instead of rotting in your notes.
+Your Creedom is a curated personal context profile in plain Markdown, sized to read in under a minute. Connected agents (Claude, ChatGPT, Codex, Cursor, Devin, and any MCP client) read it before they answer you, and propose edits as they learn new things. The file sharpens over time instead of rotting in your notes.
 
-It is not a notes app, a journal, or a memory dump. If you already maintain a hand-rolled `CLAUDE.md` or a "things ChatGPT gets wrong about me" list, Creed is that file as a real product: first draft written for you, quality scored, one canonical version everywhere, agent edits gated behind your approval.
+It is not a notes app, a journal, or a memory dump. If you already maintain a hand-rolled `CLAUDE.md` or a "things ChatGPT gets wrong about me" list, Creedom is that file as a real product: first draft written for you, quality scored, one canonical version everywhere, agent edits gated behind your approval.
 
 ```
 ┌──────────────────────┐         ┌────────────────────┐
@@ -51,7 +53,7 @@ Ten sections, five always-on (Identity, Goals, Work, Preferences, Routines) and 
 Prerequisites: **Node 20+** and a free **Supabase** project. (OpenRouter key only for AI features, Stripe only for paid-plan flows.)
 
 ```bash
-git clone https://github.com/connorhpbrn/creed.git
+git clone <your-fork-url>
 cd creed && npm install
 cp .env.example .env.local   # fill in the five required vars below
 supabase link --project-ref <your-project-ref> && supabase db push
@@ -95,11 +97,11 @@ and copy the printed `whsec_…` into `STRIPE_WEBHOOK_SECRET`. Test payments the
 
 ## Connect an agent
 
-Open `/connections` and add the Creed MCP URL to your agent as a custom connector. The client opens a browser, you click **Allow**, done. No tokens to copy.
+Open `/connections` and add the Creedom MCP URL to your agent as a custom connector. The client opens a browser, you click **Allow**, done. No tokens to copy.
 
-Creed is its own OAuth 2.1 authorization server (`/authorize`, `/token`, `/register`, `/.well-known/*`), so any spec-compliant MCP client connects from the server URL alone. First-class connect flows exist for Claude Code (one-line `claude mcp add`), Codex, Cursor (one-click), ChatGPT, Devin, OpenClaw, Hermes, OpenCode, Factory, Manus, and custom agents. Clients that do not speak MCP can use the documented `/api/creed` HTTP API.
+Creedom is its own OAuth 2.1 authorization server (`/authorize`, `/token`, `/register`, `/.well-known/*`), so any spec-compliant MCP client connects from the server URL alone. First-class connect flows exist for Claude Code (one-line `claude mcp add`), Codex, Cursor (one-click), ChatGPT, Devin, OpenClaw, Hermes, OpenCode, Factory, Manus, and custom agents. Clients that do not speak MCP can use the documented `/api/creed` HTTP API.
 
-Creed also ships a first-party terminal client. It uses the same OAuth screen
+Creedom also ships a first-party terminal client. It uses the same OAuth screen
 and discovers every tool, resource, and prompt from the live MCP server, so a
 new MCP tool appears in the CLI without a second implementation or release.
 

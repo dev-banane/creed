@@ -6,8 +6,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Create your account | Creed",
-  description: "Create your Creed account.",
+  title: "Create your account | Creedom",
+  description: "Create your Creedom account.",
 };
 
 export default async function SignupPage({

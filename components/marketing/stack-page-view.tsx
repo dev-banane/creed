@@ -57,7 +57,7 @@ export function StackPageView() {
         <div className="border-b border-[var(--creed-border)] pb-8">
           <AnimatedPageTitle text="Stack" />
           <p className="t-lede mt-5 max-w-2xl text-[var(--creed-text-secondary)]">
-            The technology Creed uses to run, store, and process your data.
+            The technology Creedom uses to run, store, and process your data.
           </p>
         </div>
 

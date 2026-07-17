@@ -38,7 +38,7 @@ export function useStripeCheckout() {
           alreadySubscribed?: boolean;
         };
         if (data.alreadyOwned) {
-          toast.success("You already own Creed");
+          toast.success("You already own Creedom");
           router.push("/file");
           return;
         }

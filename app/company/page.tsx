@@ -13,7 +13,7 @@ import {
 const PATH = "/company";
 const TITLE = "Company plan";
 const DESCRIPTION =
-  "The Creed Company plan: one shared Company Creed every member's agents read, with roles, section permissions, an activity view, and admin controls. From $129/mo for 10 seats.";
+  "The Creedom Company plan: one shared Company Creedom every member's agents read, with roles, section permissions, an activity view, and admin controls. From $129/mo for 10 seats.";
 const DATE_MODIFIED = "2026-07-07";
 
 export const metadata: Metadata = {
@@ -29,12 +29,12 @@ export default function CompanyPage() {
         data={graph(
           webPageSchema({
             path: PATH,
-            name: "Creed Company plan",
+            name: "Creedom Company plan",
             description: DESCRIPTION,
             dateModified: DATE_MODIFIED,
           }),
           breadcrumbSchema(PATH, [
-            { name: "Creed", path: "/home" },
+            { name: "Creedom", path: "/home" },
             { name: "Company", path: PATH },
           ]),
           softwareApplicationSchema(),

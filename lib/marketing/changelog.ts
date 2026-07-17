@@ -1,7 +1,7 @@
 // Curated changelog for the public site. Hand-written, user-facing entries for
 // meaningful ships, newest first. This is not a raw commit log; keep each entry
 // readable and honest, and add one when something real ships. Freshness here is
-// a signal to both search and AI answer engines that Creed is actively built.
+// a signal to both search and AI answer engines that Creedom is actively built.
 
 export type ChangelogEntry = {
   // ISO date (YYYY-MM-DD), used for ordering and the visible date.
@@ -14,8 +14,8 @@ export type ChangelogEntry = {
 export const changelog: ChangelogEntry[] = [
   {
     date: "2026-07-14",
-    title: "Creed CLI",
-    body: "Creed now has a first-party terminal client on npm. It uses the same browser OAuth flow and mirrors the live MCP server, so every current and future Creed tool is available from the terminal without a separate implementation.",
+    title: "Creedom CLI",
+    body: "Creedom now has a first-party terminal client on npm. It uses the same browser OAuth flow and mirrors the live MCP server, so every current and future Creedom tool is available from the terminal without a separate implementation.",
     highlights: [
       "Install globally with npm install --global creed-cli or run it once with npx creed-cli.",
       "Interactive and one-shot commands for tools, resources, and prompts.",
@@ -27,20 +27,20 @@ export const changelog: ChangelogEntry[] = [
   {
     date: "2026-07-12",
     title: "Tab autocomplete",
-    body: "Press Tab while editing and Creed finishes the thought in your voice, drawn from your whole file. One suggestion per press, streamed as ghost text in a few hundred milliseconds.",
+    body: "Press Tab while editing and Creedom finishes the thought in your voice, drawn from your whole file. One suggestion per press, streamed as ghost text in a few hundred milliseconds.",
     highlights: [
       "Tab once for a suggestion, Tab again to accept, Escape or keep typing to dismiss.",
       "Never invents facts: it only recombines what your file already says.",
-      "Empty sections get a short drafted opening synthesized from the rest of your Creed.",
+      "Empty sections get a short drafted opening synthesized from the rest of your Creedom.",
       "One metered generation per press against your usage allowance; accepting and dismissing are free.",
     ],
   },
   {
     date: "2026-07-07",
     title: "Company Creeds",
-    body: "Creed now works for a whole team, not just one person. The Company plan adds a shared Company Creed that every member's agents read before they act.",
+    body: "Creedom now works for a whole team, not just one person. The Company plan adds a shared Company Creedom that every member's agents read before they act.",
     highlights: [
-      "One shared Company Creed with Owner, Admin, and Member roles.",
+      "One shared Company Creedom with Owner, Admin, and Member roles.",
       "Section permissions decide who edits directly and who proposes.",
       "An activity view across every member and agent, with attribution.",
       "Owner-only billing from $129/mo for 10 seats, with extra seats available.",
@@ -49,7 +49,7 @@ export const changelog: ChangelogEntry[] = [
   {
     date: "2026-07-03",
     title: "The command panel",
-    body: "A command panel with search, ask, and an in-app agent, so you can work your Creed without leaving the file. New paid users get a short welcome tour.",
+    body: "A command panel with search, ask, and an in-app agent, so you can work your Creedom without leaving the file. New paid users get a short welcome tour.",
   },
   {
     date: "2026-07-02",
@@ -64,7 +64,7 @@ export const changelog: ChangelogEntry[] = [
   {
     date: "2026-06-24",
     title: "Interactive landing and examples",
-    body: "The landing page was rebuilt around interactive demos of how Creed works, with a new examples page showing concrete moments where one shared file changes the answer.",
+    body: "The landing page was rebuilt around interactive demos of how Creedom works, with a new examples page showing concrete moments where one shared file changes the answer.",
   },
   {
     date: "2026-06-22",
@@ -74,6 +74,6 @@ export const changelog: ChangelogEntry[] = [
   {
     date: "2026-06-21",
     title: "Accounts and authentication",
-    body: "Email, social, and password-reset authentication, so your Creed is tied to an account you control.",
+    body: "Email, social, and password-reset authentication, so your Creedom is tied to an account you control.",
   },
 ];

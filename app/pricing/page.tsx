@@ -14,7 +14,7 @@ import {
 const PATH = "/pricing";
 const TITLE = "Pricing";
 const DESCRIPTION =
-  "Creed pricing: free to self-host, Personal hosting from $12/mo ($99/yr, $199 lifetime), and the Company plan from $129/mo ($999/yr, $1,999 lifetime) for 10 seats. All hosted plans support BYOK.";
+  "Creedom pricing: free to self-host, Personal hosting from $12/mo ($99/yr, $199 lifetime), and the Company plan from $129/mo ($999/yr, $1,999 lifetime) for 10 seats. All hosted plans support BYOK.";
 
 const DATE_MODIFIED = "2026-07-07";
 
@@ -31,12 +31,12 @@ export default function PricingPage() {
         data={graph(
           webPageSchema({
             path: PATH,
-            name: "Creed pricing",
+            name: "Creedom pricing",
             description: DESCRIPTION,
             dateModified: DATE_MODIFIED,
           }),
           breadcrumbSchema(PATH, [
-            { name: "Creed", path: "/home" },
+            { name: "Creedom", path: "/home" },
             { name: "Pricing", path: PATH },
           ]),
           softwareApplicationSchema(),

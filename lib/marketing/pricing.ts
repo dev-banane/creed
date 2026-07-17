@@ -11,47 +11,65 @@
 
 export type BillingCycle = "monthly" | "yearly" | "lifetime";
 
-export type CardPricing = { price: string; cadence: string; tagline: string };
+export type CardPricing = {
+  price: string;
+  cadence: string;
+  tagline: string;
+  listPrice: string;
+  listCadence: string;
+};
 
 export const PERSONAL_PRICING: Record<BillingCycle, CardPricing> = {
   monthly: {
-    price: "$12",
-    cadence: "/mo",
-    tagline: "Solo access, billed monthly.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$12",
+    listCadence: "/mo",
+    tagline: "Solo access, free when you self-host.",
   },
   yearly: {
-    price: "$99",
-    cadence: "/yr",
-    tagline: "Solo access, billed yearly.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$99",
+    listCadence: "/yr",
+    tagline: "Solo access, free when you self-host.",
   },
   lifetime: {
-    price: "$199",
-    cadence: "one-time",
-    tagline: "Solo access, hosted and yours forever.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$199",
+    listCadence: "one-time",
+    tagline: "Solo access, hosted and yours forever, for free.",
   },
 };
 
 export const COMPANY_PRICING: Record<BillingCycle, CardPricing> = {
   monthly: {
-    price: "$129",
-    cadence: "/mo",
-    tagline: "10 seats, then $12/mo each.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$129",
+    listCadence: "/mo",
+    tagline: "Unlimited seats, free when you self-host.",
   },
   yearly: {
-    price: "$999",
-    cadence: "/yr",
-    tagline: "10 seats, then $99/yr each.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$999",
+    listCadence: "/yr",
+    tagline: "Unlimited seats, free when you self-host.",
   },
   lifetime: {
-    price: "$1,999",
-    cadence: "one-time",
-    tagline: "10 lifetime seats, then $199 each.",
+    price: "Free",
+    cadence: "self-hosted",
+    listPrice: "$1,999",
+    listCadence: "one-time",
+    tagline: "Unlimited seats, yours forever, for free.",
   },
 };
 
 // A flat, human-and-crawler-readable description of every plan. This is what
 // the crawlable reference table and the plain-text llms files render from, so
-// an AI asked "how much does Creed cost" reads the same facts a visitor sees.
+// an AI asked "how much does Creedom cost" reads the same facts a visitor sees.
 export type PlanFact = {
   name: string;
   price: string;
@@ -64,61 +82,61 @@ export type PlanFact = {
 export const PLAN_FACTS: PlanFact[] = [
   {
     name: "Open",
-    price: "$0",
+    price: "Free",
     cadence: "forever",
     summary:
-      "Self-host the open source build. Full Creed editor, all MCP connections, and quality scoring. No hosted sync, backups, or storage.",
+      "Self-host the open source build. Full Creedom editor, all MCP connections, and quality scoring. No hosted sync, backups, or storage.",
     usage: "Bring your own AI key.",
   },
   {
     name: "Personal, monthly",
-    price: "$12",
-    cadence: "per month",
+    price: "Free",
+    cadence: "self-hosted (list price $12/mo)",
     summary:
-      "Hosted Creed for one person. Cross-device sync, backups, and managed auth and storage.",
-    usage: "$5 per month of usage included, BYOK available.",
+      "Self-hosted Creedom for one person. Cross-device sync, backups, and managed auth and storage, run on your own infrastructure.",
+    usage: "Bring your own AI key.",
   },
   {
     name: "Personal, yearly",
-    price: "$99",
-    cadence: "per year",
-    summary: "The monthly Personal plan billed once a year.",
-    usage: "$5 per month of usage included, BYOK available.",
+    price: "Free",
+    cadence: "self-hosted (list price $99/yr)",
+    summary: "The same self-hosted Personal plan, billed at nothing, all year.",
+    usage: "Bring your own AI key.",
   },
   {
     name: "Personal, lifetime",
-    price: "$199",
-    cadence: "one-time",
-    summary: "Personal, hosted and yours forever with a single payment.",
-    usage: "$20 one-time usage credit, BYOK available.",
+    price: "Free",
+    cadence: "self-hosted (list price $199 one-time)",
+    summary: "Personal, self-hosted and yours forever, for free.",
+    usage: "Bring your own AI key.",
   },
   {
     name: "Company, monthly",
-    price: "$129",
-    cadence: "per month",
+    price: "Free",
+    cadence: "self-hosted (list price $129/mo)",
     summary:
-      "One shared Company Creed every member's agents read, with member roles, an activity view across the team, and admin controls.",
-    usage: "$50 per month of usage included, BYOK available.",
-    seats: "10 seats included, then $12 per month for each extra seat.",
+      "One shared Company Creedom every member's agents read, with member roles, an activity view across the team, and admin controls.",
+    usage: "Bring your own AI key.",
+    seats: "Unlimited seats, self-hosted.",
   },
   {
     name: "Company, yearly",
-    price: "$999",
-    cadence: "per year",
-    summary: "The monthly Company plan billed once a year.",
-    usage: "$50 per month of usage included, BYOK available.",
-    seats: "10 seats included, then $99 per year for each extra seat.",
+    price: "Free",
+    cadence: "self-hosted (list price $999/yr)",
+    summary: "The same self-hosted Company plan, billed at nothing, all year.",
+    usage: "Bring your own AI key.",
+    seats: "Unlimited seats, self-hosted.",
   },
   {
     name: "Company, lifetime",
-    price: "$1,999",
-    cadence: "one-time",
-    summary: "A shared Company Creed owned forever with a single payment.",
-    usage: "$200 one-time usage credit, BYOK available.",
-    seats: "10 lifetime seats included, then $199 for each extra lifetime seat.",
+    price: "Free",
+    cadence: "self-hosted (list price $1,999 one-time)",
+    summary: "A shared Company Creedom, self-hosted and owned forever, for free.",
+    usage: "Bring your own AI key.",
+    seats: "Unlimited seats, self-hosted.",
   },
 ];
 
 // One-line pricing summary reused in plain-text surfaces (llms.txt).
 export const PRICING_ONE_LINER =
-  "Open source is free to self-host. Personal hosting is $12/mo, $99/yr, or $199 lifetime. The Company plan is $129/mo, $999/yr, or $1,999 lifetime for 10 seats, with extra seats available. All hosted plans support BYOK.";
+  "This is a free, self-hosted fork. Every plan - Personal and Company, monthly, yearly, or lifetime - costs nothing; list prices from the original hosted product ($12/mo-$1,999 lifetime) are shown struck through for reference only. Bring your own AI key.";
